@@ -87,7 +87,7 @@ jobs:
             const files = fs.readdirSync('installers').filter(name => /\.(dmg|exe)$/.test(name));
             const expected = [`Nocturne-${version}-arm64.dmg`, `Nocturne-${version}.dmg`, `Nocturne Setup ${version}.exe`];
             if (files.length !== 3 || expected.some(name => !files.includes(name))) throw new Error('Missing or unexpected installer');
-            const sums = files.map(name => crypto.createHash('sha256').update(fs.readFileSync('installers/' + name)).digest('hex') + '  ' + name).join('\n') + '\n';
+            const sums = files.map(name => crypto.createHash('sha256').update(fs.readFileSync('installers/' + name)).digest('hex') + '  ' + name.replace(/ /g, '.')).join('\n') + '\n';
             fs.writeFileSync('installers/SHA256SUMS.txt', sums);
             files.push('SHA256SUMS.txt');
             const { owner, repo } = context.repo;

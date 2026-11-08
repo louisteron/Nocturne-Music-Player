@@ -10,7 +10,7 @@ Les installateurs sont disponibles dans [la release v0.16.2](https://github.com/
 
 - Mac Apple Silicon : `Nocturne-0.16.2-arm64.dmg`
 - Mac Intel : `Nocturne-0.16.2.dmg`
-- Windows x64 : `Nocturne Setup 0.16.2.exe`
+- Windows x64 : `Nocturne.Setup.0.16.2.exe`
 
 Les installateurs ne sont pas signés.
 
