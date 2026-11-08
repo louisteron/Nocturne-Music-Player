@@ -1,3 +1,4 @@
+const { searchMetadata } = require('./search-metadata.cjs');
 const ORIGIN = 'https://music.youtube.com';
 function allowedNavigation(value) {
   try { const url = new URL(value); return url.protocol === 'https:' && ['music.youtube.com', 'www.youtube.com', 'accounts.youtube.com', 'accounts.google.com', 'consent.youtube.com', 'consent.google.com'].includes(url.hostname) && !url.username && !url.password && !url.port; } catch { return false; }
@@ -29,6 +30,33 @@ function readPlayback() {
   let bufferedAhead = 0;
   for (let i = 0; i < media.buffered.length; i++) if (media.buffered.start(i) <= media.currentTime + 0.05 && media.buffered.end(i) >= media.currentTime) bufferedAhead = media.buffered.end(i) - media.currentTime;
   return { videoId, title: title.trim().slice(0, 300), artist: artist.trim().slice(0, 300), album: (metadata?.album || '').slice(0, 300), paused: media.paused, currentTime: Number.isFinite(media.currentTime) ? media.currentTime : 0, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted, readyState: media.readyState, ended: media.ended, bufferedAhead };
+}
+// Lecture locale de fréquences seulement : aucun enregistrement ni envoi audio.
+function readSpectrum(active) {
+  if (location.origin !== 'https://music.youtube.com') return null;
+  const key = Symbol.for('nocturne.visualizer.audio');
+  let tap = window[key];
+  const media = document.querySelector('video');
+  function release() {
+    if (!tap) return;
+    tap.source.disconnect(); tap.analyser.disconnect(); tap.silent.disconnect();
+    tap.stream.getTracks().forEach(track => track.stop()); tap.context.close().catch(() => {}); delete window[key]; tap = null;
+  }
+  if (!active) { release(); return null; }
+  if (!media || media.paused || media.readyState < 2 || document.querySelector('#movie_player.ad-showing, #movie_player.ad-interrupting')) return null;
+  if (tap && (tap.media !== media || tap.url !== media.currentSrc || tap.stream.getAudioTracks().every(track => track.readyState === 'ended'))) release();
+  try {
+    if (!tap) {
+      const stream = media.captureStream();
+      if (!stream.getAudioTracks().length) { stream.getTracks().forEach(track => track.stop()); return null; }
+      const context = new AudioContext(), source = context.createMediaStreamSource(stream), analyser = context.createAnalyser(), silent = context.createGain();
+      analyser.fftSize = 2048; analyser.minDecibels = -100; analyser.maxDecibels = 0; analyser.smoothingTimeConstant = 0; silent.gain.value = 0;
+      source.connect(analyser); analyser.connect(silent); silent.connect(context.destination);
+      tap = window[key] = { media, url: media.currentSrc, stream, context, source, analyser, silent };
+    }
+    if (tap.context.state === 'suspended') tap.context.resume().catch(() => {});
+    const wave = new Float32Array(2048), frequency = new Float32Array(1024); tap.analyser.getFloatTimeDomainData(wave); tap.analyser.getFloatFrequencyData(frequency); return { wave: Array.from(wave), frequency: Array.from(frequency), rate: tap.context.sampleRate };
+  } catch { release(); return null; }
 }
 async function control(action, value) {
   if (location.origin !== 'https://music.youtube.com') throw new Error('Ouvre un morceau dans YouTube Music.');
@@ -62,7 +90,7 @@ function installYouTube({ app, WebContentsView, ipcMain, authorize, session, get
       const state = await view.webContents.executeJavaScript(`(${readPlayback.toString()})()`);
       if (!state) return;
       if (state.ad) { send('youtube:state', { ad: true }); return; }
-      const track = { id: `youtube:${state.videoId}`, source: 'youtube', title: state.title, artist: state.artist, album: state.album || 'YouTube Music', duration: state.duration, videoId: state.videoId };
+      const track = searchMetadata({ id: `youtube:${state.videoId}`, source: 'youtube', title: state.title, artist: state.artist, album: state.album || 'YouTube Music', duration: state.duration, videoId: state.videoId });
       tracks.set(track.id, track); if (tracks.size > 100) tracks.delete(tracks.keys().next().value);
       send('youtube:state', { ...state, track });
     } catch { /* Navigation en cours ou fenêtre fermée. */ }
@@ -90,6 +118,12 @@ function installYouTube({ app, WebContentsView, ipcMain, authorize, session, get
     }
     return view;
   }
+  ipcMain.handle('youtube:spectrum', async (event, active) => {
+    authorize(event);
+    if (typeof active !== 'boolean') throw new Error('État du visualiseur invalide.');
+    if (!view || view.webContents.isDestroyed()) return null;
+    return view.webContents.executeJavaScript(`(${readSpectrum.toString()})(${active})`, true).catch(() => null);
+  });
   ipcMain.handle('youtube:layout', (event, rect, show) => {
     authorize(event); visible = show === true;
     if (!visible && !view) return;

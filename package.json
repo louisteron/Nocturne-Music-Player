@@ -1,6 +1,6 @@
 {
   "name": "nocturne-player",
-  "version": "0.12.0",
+  "version": "0.16.2",
   "description": "Lecteur de musique local pour macOS et Windows",
   "author": "Nocturne",
   "private": true,
@@ -9,10 +9,11 @@
     "start": "electron .",
     "dist:mac": "electron-builder --mac --arm64 --x64",
     "dist:win": "electron-builder --win --x64",
-    "test": "node --test tests/library.test.cjs tests/youtube.test.cjs tests/youtube-adblock.test.cjs tests/volumio-stream.test.cjs tests/lyrics.test.cjs tests/edits.test.cjs tests/edit-discovery.test.cjs tests/edit-ranking.test.cjs tests/tiktok-session.test.cjs tests/audio-match.test.cjs && node tests/desktop.cjs && node tests/volumio-desktop.cjs && node tests/lyrics-desktop.cjs && node tests/edits-desktop.cjs && node tests/youtube-desktop.cjs",
+    "test": "node --test tests/library.test.cjs tests/youtube.test.cjs tests/youtube-adblock.test.cjs tests/volumio-stream.test.cjs tests/lyrics.test.cjs tests/edits.test.cjs tests/edit-discovery.test.cjs tests/edit-ranking.test.cjs tests/tiktok-session.test.cjs tests/audio-match.test.cjs && node tests/desktop.cjs && node tests/volumio-desktop.cjs && node tests/lyrics-desktop.cjs && node tests/edits-desktop.cjs && node tests/youtube-desktop.cjs && node tests/visualizer-desktop.cjs && node tests/dsviz-scenes.cjs && node tests/visualizer-performance.cjs",
     "test:live": "node tests/volumio-live.cjs",
-    "check": "node --check electron/youtube-adblock.cjs && node --check electron/youtube.cjs && node --check src/youtube.js && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/volumio.cjs && node --check electron/volumio-ipc.cjs && node --check electron/lyrics.cjs && node --check electron/edits.cjs && node --check electron/edit-discovery.cjs && node --check electron/edit-ranking.cjs && node --check electron/tiktok-session.cjs && node --check electron/audio-match.cjs && node --check src/albums.js && node --check src/player.js && node --check src/lrc.js && node --check src/lyrics.js && node --check src/edits.js",
-    "filters:update": "node scripts/update-adblock.cjs"
+    "check": "node --check src/visualizer-worker.js && node --check scripts/dsviz-programs.js && node --check scripts/dsviz-performance.js && node --check src/vendor/dsviz/dsviz.js && node --check scripts/build-dsviz.cjs && node --check src/visualizer.js && node --check electron/search-metadata.cjs && node --check electron/youtube-adblock.cjs && node --check electron/youtube.cjs && node --check src/youtube.js && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/volumio.cjs && node --check electron/volumio-ipc.cjs && node --check electron/lyrics.cjs && node --check electron/edits.cjs && node --check electron/edit-discovery.cjs && node --check electron/edit-ranking.cjs && node --check electron/tiktok-session.cjs && node --check electron/audio-match.cjs && node --check src/albums.js && node --check src/player.js && node --check src/lrc.js && node --check src/lyrics.js && node --check src/edits.js",
+    "filters:update": "node scripts/update-adblock.cjs",
+    "visualizer:build": "node scripts/build-dsviz.cjs"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.20.3",

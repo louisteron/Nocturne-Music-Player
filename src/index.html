@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: nocturne:; media-src nocturne:; frame-src https://www.tiktok.com; connect-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' data: nocturne:; media-src nocturne:; frame-src https://www.tiktok.com; connect-src 'none'">
   <title>Nocturne</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="albums.css">
   <link rel="stylesheet" href="lyrics.css">
   <link rel="stylesheet" href="edits.css">
   <link rel="stylesheet" href="youtube.css">
+  <link rel="stylesheet" href="visualizer.css">
 </head>
 <body>
   <div class="city" aria-hidden="true"><div class="buildings"></div><div class="sign">夜<br>の<br>音</div><div class="road"></div></div>
-  <header><a class="brand" href="#">nocturne<span>YOUR MUSIC, AFTER DARK</span></a><div class="top-right"><button id="edits-switch" class="edits-switch" role="switch" aria-checked="false" aria-label="Mode edits TikTok"><span class="switch-track" aria-hidden="true"></span><span>Edits TikTok</span></button><button id="server-settings" class="server-settings">＋ Connecter Volumio</button><span id="connection-label" class="offline">● LOCAL</span><time id="clock"></time></div></header>
+  <header><a class="brand" href="#">nocturne<span>YOUR MUSIC, AFTER DARK</span></a><div class="top-right"><button id="show-visualizer" disabled aria-pressed="false">✧ Visualiseur</button><button id="edits-switch" class="edits-switch" role="switch" aria-checked="false" aria-label="Mode edits TikTok"><span class="switch-track" aria-hidden="true"></span><span>Edits TikTok</span></button><button id="server-settings" class="server-settings">＋ Connecter Volumio</button><span id="connection-label" class="offline">● LOCAL</span><time id="clock"></time></div></header>
   <main>
     <section class="library" aria-label="Bibliothèque musicale">
       <div class="library-heading"><h1>Les albums<span id="count">0 album</span></h1><button id="add" title="Ajouter des fichiers" aria-label="Ajouter des fichiers">＋</button></div>
@@ -40,7 +41,12 @@
   </footer>
   <div id="status" role="status" aria-live="polite"></div>
   <dialog id="volumio-dialog" aria-labelledby="volumio-heading"><div class="dialog-heading"><div><span class="eyebrow">TA MUSIQUE EN RÉSEAU</span><h2 id="volumio-heading">Connecter Volumio</h2></div><button id="close-server" aria-label="Fermer">×</button></div><form id="server-form"><label for="server-address">Adresse de ton serveur</label><div class="server-input"><input id="server-address" placeholder="http://volumio.local" required><button id="connect-server" type="submit">Se connecter</button></div></form><p id="server-message" role="status">Parcours les dossiers, puis synchronise celui de ton choix avec ses sous-dossiers.</p><nav id="breadcrumbs" aria-label="Chemin du dossier"></nav><div id="server-folders"></div><div class="dialog-footer"><span id="server-folder-count"></span><button id="import-server" disabled>Synchroniser ce dossier</button></div></dialog>
-  <audio id="audio"></audio>
+  <section id="visualizer" class="visualizer" aria-label="Visualiseur musical" hidden>
+    <canvas id="visualizer-output" aria-label="Scènes dsViz synchronisées à la musique"></canvas>
+    <div class="visualizer-toolbar"><span class="visualizer-brand">NOCTURNE / VISUALISEUR</span><select id="visualizer-mode" aria-label="Style du visualiseur"><option value="auto" selected>Toutes les scènes dsViz</option><option value="0">Lumière</option><option value="1">Vie et particules</option><option value="2">Fluides</option><option value="3">Ondes et signal</option></select><button id="visualizer-next" title="Changer d’animation (flèche droite)">Autre animation →</button><button id="visualizer-fullscreen">Plein écran</button><button id="visualizer-close" aria-label="Fermer le visualiseur">✕</button></div>
+    <div class="visualizer-info"><strong id="visualizer-title">La musique prend forme.</strong><span id="visualizer-artist"></span><small id="visualizer-state"></small><small id="visualizer-preset"></small></div>
+  </section>
+  <audio id="audio" crossorigin="anonymous"></audio>
   <dialog id="edit-provider-dialog" aria-labelledby="edit-provider-heading"><div class="dialog-heading"><div><span class="eyebrow">GRATUIT · AUCUNE CLÉ API</span><h2 id="edit-provider-heading">Connexion TikTok</h2></div><button id="edit-provider-close" aria-label="Fermer">×</button></div><p class="edit-explanation">Connecte-toi directement à TikTok dans la fenêtre qui s’ouvre. Tu peux utiliser son QR code. Nocturne n’accède pas à ton mot de passe et ne lit ni n’exporte tes cookies.</p><p id="edit-provider-status" role="status"></p><div class="edit-form-actions"><button id="edit-session-connect">Se connecter à TikTok</button><button id="edit-session-confirm">Connexion terminée</button></div><div class="edit-provider-note"><p>La session est conservée sur cet ordinateur. La recherche utilise le site TikTok avec le titre et l’artiste du morceau, sans service payant. Si TikTok bloque les résultats ou demande une vérification, Nocturne le signale sans la contourner.</p><button id="edit-session-open">Ouvrir la fenêtre TikTok</button> · <button id="edit-session-disconnect" disabled>Déconnecter TikTok</button></div></dialog>
   <script src="albums.js"></script>
   <script src="lrc.js"></script>
@@ -48,5 +54,7 @@
   <script src="lyrics.js"></script>
   <script src="edits.js"></script>
   <script src="youtube.js"></script>
+  <script src="vendor/dsviz/dsviz.js"></script>
+  <script src="visualizer.js"></script>
 </body>
 </html>

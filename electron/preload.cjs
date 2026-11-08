@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('youtube', {
+  spectrum: active => ipcRenderer.invoke('youtube:spectrum', active),
   layout: (bounds, show) => ipcRenderer.invoke('youtube:layout', bounds, show),
   search: query => ipcRenderer.invoke('youtube:search', query),
   home: () => ipcRenderer.invoke('youtube:home'),

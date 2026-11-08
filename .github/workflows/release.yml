@@ -1,0 +1,99 @@
+name: Build and publish Nocturne
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag to build
+        required: true
+        default: v0.16.2
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: mac-arm64
+            args: --mac --arm64
+          - runner: macos-15-intel
+            target: mac-intel
+            args: --mac --x64
+          - runner: windows-2025
+            target: windows-x64
+            args: --win --x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26'
+          cache: npm
+      - name: Check version
+        run: node -e "const p=require('./package.json');if(process.env.RELEASE_TAG!=='v'+p.version)throw new Error('Version/tag mismatch')"
+      - run: npm ci
+      - run: npm run check
+      - name: Unit tests
+        run: node --test tests/library.test.cjs tests/youtube.test.cjs tests/youtube-adblock.test.cjs tests/volumio-stream.test.cjs tests/lyrics.test.cjs tests/edits.test.cjs tests/edit-discovery.test.cjs tests/edit-ranking.test.cjs tests/tiktok-session.test.cjs tests/audio-match.test.cjs
+      - name: Build installer
+        run: npx electron-builder ${{ matrix.args }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+          path: |
+            dist/*.dmg
+            dist/*.exe
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: installers
+      - name: Publish release with all installers
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const crypto = require('crypto');
+            const tag = process.env.RELEASE_TAG;
+            const version = require(process.cwd() + '/package.json').version;
+            if (tag !== 'v' + version) throw new Error('Version/tag mismatch');
+            const files = fs.readdirSync('installers').filter(name => /\.(dmg|exe)$/.test(name));
+            const expected = [`Nocturne-${version}-arm64.dmg`, `Nocturne-${version}.dmg`, `Nocturne Setup ${version}.exe`];
+            if (files.length !== 3 || expected.some(name => !files.includes(name))) throw new Error('Missing or unexpected installer');
+            const sums = files.map(name => crypto.createHash('sha256').update(fs.readFileSync('installers/' + name)).digest('hex') + '  ' + name).join('\n') + '\n';
+            fs.writeFileSync('installers/SHA256SUMS.txt', sums);
+            files.push('SHA256SUMS.txt');
+            const { owner, repo } = context.repo;
+            const body = fs.readFileSync('.github/release-notes/' + tag + '.md', 'utf8');
+            const { data: release } = await github.rest.repos.createRelease({ owner, repo, tag_name: tag, name: 'Nocturne ' + version, body, draft: true });
+            for (const name of files) {
+              await github.rest.repos.uploadReleaseAsset({ owner, repo, release_id: release.id, name, data: fs.readFileSync('installers/' + name) });
+            }
+            await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, draft: false, make_latest: 'true' });

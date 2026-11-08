@@ -1,11 +1,13 @@
+const { cleanTitle, searchMetadata } = require('./search-metadata.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const normalize = text => String(text || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 function sameSound(track, music) {
   if (!music || music.original === true) return false;
+  track = searchMetadata(track);
   const title = normalize(track.title), artist = normalize(track.artist), author = normalize(music.author);
-  return Boolean(title && artist.length >= 3 && title === normalize(music.title) && (author === artist || author.split(/\s+/).length > 1 && (` ${artist} `).includes(` ${author} `)));
+  return Boolean(title && artist.length >= 3 && title === normalize(cleanTitle(music.title)) && (author === artist || author.split(/\s+/).length > 1 && (` ${artist} `).includes(` ${author} `)));
 }
 function candidates(track, videos) {
   const found = new Map();
@@ -24,7 +26,7 @@ async function installDiscovery({ app, ipcMain, authorize, getTrack, safeStorage
   const pending = new Map(), available = new Map();
   function status() { return { provider: 'TikLiveAPI', configured: Boolean(apiKey), secureStorage: safeStorage.isEncryptionAvailable() }; }
   async function write(file, value) { await fs.mkdir(directory, { recursive: true }); await fs.writeFile(file + '.tmp', JSON.stringify(value), 'utf8'); await fs.rename(file + '.tmp', file); }
-  function track(id) { const value = typeof id === 'string' && getTrack(id); if (!value) throw new Error('Morceau indisponible.'); return value; }
+  function track(id) { const value = typeof id === 'string' && getTrack(id); if (!value) throw new Error('Morceau indisponible.'); return searchMetadata(value); }
   ipcMain.handle('edits:provider', event => { authorize(event); return status(); });
   ipcMain.handle('edits:provider-save', async (event, value) => {
     authorize(event);

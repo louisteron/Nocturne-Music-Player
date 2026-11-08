@@ -1,0 +1,10 @@
+dsViz / lemondrop — malakachakra
+Dépôt d’origine : https://github.com/malakachakra/dsViz
+Source fournie par l’utilisateur : malakachakra-dsViz-889b2c5.zip
+Révision : 889b2c5c78e52e76e7bee338ac594daf623b5596
+SHA-256 de l’archive : c7d056305b9f01086db5a194446514c635d0c19007c2f6a60b92b34573be372d
+
+Le moteur WebGL, les 42 scènes, l’analyse audio, les fluides et les agents proviennent de cette source.
+Adaptations Nocturne : entrée audio du lecteur, interface locale, compilation paresseuse des shaders, réglages de confort et cycle de 12–16 secondes.
+Les sources originales et leur README sont conservés dans vendor/dsviz/upstream.
+L’archive fournie ne contient pas de fichier de licence distinct.

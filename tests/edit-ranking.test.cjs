@@ -16,3 +16,26 @@ test('Métadonnées : son exact prioritaire, titre ET artiste nécessaires pour 
   assert.equal(rankVideos(track, [{ ...caption, music_info: { title: 'Another song', author: 'Another artist', original: false } }]).length, 0);
   assert.equal(rankVideos(track, [{ ...base, images: [true] }, { ...base, is_ad: true }]).length, 0);
 });
+
+test('Métadonnées : feat retiré et véritable artiste déduit des titres YouTube', () => {
+  const { searchMetadata, cleanTitle } = require('../electron/search-metadata.cjs');
+  assert.equal(cleanTitle('Popular (feat. Playboi Carti & Madonna)'), 'Popular');
+  assert.equal(cleanTitle('Popular FEAT. Madonna'), 'Popular');
+  assert.equal(cleanTitle('Song [ft. Guest] (Live)'), 'Song (Live)');
+  assert.equal(cleanTitle('FEAT'), 'FEAT');
+  const youtube = searchMetadata({ source: 'youtube', title: 'Playboi Carti - Timeless (feat. The Weeknd) (Official Audio)', artist: 'Fan uploads' });
+  assert.equal(youtube.title, 'Timeless'); assert.equal(youtube.artist, 'Playboi Carti');
+  assert.equal(searchMetadata({ source: 'youtube', title: 'Heartless – Kanye West', artist: 'Kanye West' }).title, 'Heartless');
+  assert.equal(searchMetadata({ source: 'youtube', title: 'JAY-Z - Song', artist: 'Uploads' }).artist, 'JAY-Z');
+  assert.equal(searchMetadata({ source: 'youtube', title: 'Song', artist: 'Uploader' }).artist, 'Uploader');
+  assert.equal(searchMetadata({ title: 'Artist - Song', artist: 'Actual artist' }).title, 'Artist - Song');
+  const videos = [{ video_id: '6718335390845095173', title: 'movie edit', music_info: { title: 'Timeless', author: 'Playboi Carti' } }];
+  assert.equal(rankVideos(youtube, videos).length, 1);
+});
+
+test('Métadonnées : conserver les versions et éviter un second découpage', () => {
+  const { searchMetadata } = require('../electron/search-metadata.cjs');
+  const track = searchMetadata({ source: 'youtube', title: 'Song - Live', artist: 'Artist' });
+  assert.equal(track.title, 'Song - Live'); assert.equal(track.artist, 'Artist');
+  assert.deepEqual(searchMetadata(track), track);
+});

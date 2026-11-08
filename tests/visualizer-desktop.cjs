@@ -1,0 +1,67 @@
+const { _electron } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+(async () => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'nocturne-visualizer-'));
+  const profile = path.join(temp, 'profile'); await fs.mkdir(profile);
+  const wav = Buffer.alloc(44 + 44100 * 60 * 2);
+  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(44100, 24); wav.writeUInt32LE(88200, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
+  for (let i = 0; i < (wav.length - 44) / 2; i++) wav.writeInt16LE(Math.round(Math.sin(i * Math.PI * 2 * 220 / 44100) * (i/44100>=4 && i/44100<6 ? 0 : i/44100>=6 ? 9000 : 1600)), 44 + i * 2);
+  const music = path.join(temp, 'Filaments.wav'); await fs.writeFile(music, wav);
+  const env = { ...process.env, NOCTURNE_TEST_DATA: profile }; delete env.ELECTRON_RUN_AS_NODE;
+  const app = await _electron.launch({ args: [path.resolve(__dirname, '..')], env });
+  try {
+    const page = await app.firstWindow(); page.setDefaultTimeout(20000); const errors = []; page.on('pageerror', e => errors.push(e.message));
+    await page.locator('#show-visualizer').click();
+    await page.waitForFunction(() => document.querySelector('#visualizer').dataset.worker === 'ready');
+    await page.locator('#visualizer-close').click();
+    await app.evaluate(({ dialog }, file) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] }); }, music);
+    await page.locator('#add').click(); await page.locator('.track-select').first().click();
+    await page.waitForFunction(() => document.querySelector('#audio').currentTime > .1);
+    await page.locator('#show-visualizer').click();
+    await page.waitForFunction(() => document.querySelector('#visualizer-state').textContent.includes('Réagit au son'));
+    await fs.mkdir(path.resolve('artifacts'), { recursive: true });
+    await page.waitForFunction(() => Number(document.querySelector('#visualizer').dataset.hue) > 10);
+    await page.screenshot({ path: path.resolve('artifacts/nocturne-classic-clean.png') });
+    assert.equal(await page.locator('#visualizer').getAttribute('data-engine'),'dsviz-worker');
+    assert.equal(await page.locator('#visualizer').getAttribute('data-scenes'),'39');
+    const resolution=await page.locator('#visualizer-output').evaluate(c=>({width:Number(document.querySelector('#visualizer').dataset.width),css:c.getBoundingClientRect().width,dpr:devicePixelRatio}));
+    assert.ok(resolution.width >= resolution.css * Math.min(resolution.dpr,2) - 4);
+    const fps = await page.evaluate(() => new Promise(resolve=>{let first,last,n=0;const tick=t=>{first??=t;last=t;if(++n===31)resolve(30000/(last-first));else requestAnimationFrame(tick);};requestAnimationFrame(tick);}));
+    console.log('Fluidité mesurée :',Math.round(fps),'images/s');
+    await page.locator('#audio').evaluate(a=>{a.currentTime=.5;});
+    await page.waitForFunction(()=>{const r=Number(document.querySelector('#visualizer').dataset.rms);return r>.005 && r<.06;});
+    const rmsBefore = await page.locator('#visualizer').getAttribute('data-rms');
+    await page.locator('#audio').evaluate(a => { a.currentTime = 4.2; });
+    await page.waitForFunction(() => document.querySelector('#visualizer').dataset.signal === 'silent');
+    await page.locator('#audio').evaluate(a => { a.currentTime = 6.2; });
+    await page.waitForFunction(() => Number(document.querySelector('#visualizer').dataset.rms) > .1);
+    assert.ok(Number(await page.locator('#visualizer').getAttribute('data-rms')) > Number(rmsBefore) * 3);
+    await page.locator('#visualizer-mode').selectOption('auto');
+    const hueBefore = Number(await page.locator('#visualizer').getAttribute('data-hue'));
+    await page.waitForFunction(h => Number(document.querySelector('#visualizer').dataset.hue) > h + 8, hueBefore);
+    const seen = new Set();
+    for (let i = 0; i < 12; i++) { const previous=await page.locator('#visualizer').getAttribute('data-preset'); seen.add(previous); await page.locator('#visualizer-next').click(); await page.waitForFunction(name=>document.querySelector('#visualizer').dataset.preset!==name,previous); }
+    assert.ok(seen.size >= 10);
+    const before = await page.locator('#audio').evaluate(a => a.currentTime);
+    for (const mode of ['0', '1', '2', 'auto']) { await page.locator('#visualizer-mode').selectOption(mode); }
+    await page.waitForFunction(position => document.querySelector('#audio').currentTime > position + .4, before);
+    await fs.mkdir(path.resolve('artifacts'), { recursive: true });
+    await page.locator('#visualizer-mode').selectOption('0');
+    const hueShot = Number(await page.locator('#visualizer').getAttribute('data-hue'));
+    await page.waitForFunction(h => Number(document.querySelector('#visualizer').dataset.hue) > h + 9, hueShot);
+    await page.screenshot({ path: path.resolve('artifacts/nocturne-visualizer.png') });
+    const entered = app.evaluate(({ BrowserWindow }) => new Promise(resolve => BrowserWindow.getAllWindows()[0].once('enter-full-screen', resolve)));
+    await page.locator('#visualizer-fullscreen').click(); await entered; await page.waitForFunction(() => !!document.fullscreenElement);
+    const exited = app.evaluate(({ BrowserWindow }) => new Promise(resolve => BrowserWindow.getAllWindows()[0].once('leave-full-screen', resolve)));
+    await page.locator('#visualizer-fullscreen').click(); await exited; await page.waitForFunction(() => !document.fullscreenElement);
+    await page.keyboard.press('Escape'); assert.equal(await page.locator('#visualizer').isHidden(), true);
+    assert.equal(await page.locator('#audio').evaluate(a => a.paused), false);
+    await page.locator('#show-visualizer').click(); await page.waitForFunction(() => document.querySelector('#visualizer-state').textContent.includes('Réagit au son'));
+    await page.locator('#play').click(); await page.waitForFunction(() => document.querySelector('#visualizer-state').textContent === 'En attente de lecture');
+    assert.deepEqual(errors, []);
+    console.log('OK : silence détecté, volume fort mesuré, couleurs évolutives, scènes dsViz distinctes, plein écran, fermeture sans interrompre le son, réouverture et pause.');
+  } finally { await app.close(); await fs.rm(temp, { recursive: true, force: true }); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

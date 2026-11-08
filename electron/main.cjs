@@ -5,7 +5,7 @@ const { Readable } = require('node:stream');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 if (!app.isPackaged && process.env.NOCTURNE_TEST_DATA) app.setPath('userData', process.env.NOCTURNE_TEST_DATA);
-protocol.registerSchemesAsPrivileged([{ scheme: 'nocturne', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'nocturne', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
 const extensions = new Set(['.mp3', '.m4a', '.wav', '.flac', '.ogg', '.aac', '.opus']);
 let tracks = [];
 let window;
@@ -44,7 +44,10 @@ app.whenReady().then(async () => {
     if (error.code !== 'ENOENT') await fs.copyFile(store(), store() + '.backup').catch(() => {});
     tracks = [];
   }
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    const appUrl = require('node:url').pathToFileURL(path.join(__dirname, '../src/index.html')).href;
+    callback(permission === 'fullscreen' && contents === window?.webContents && details.requestingUrl === appUrl);
+  });
   const volumio = await require('./volumio-ipc.cjs')({ app, ipcMain, authorize, getWindow: () => window });
   const youtube = require('./youtube.cjs').installYouTube({ app, WebContentsView, ipcMain, authorize, session, getWindow: () => window });
   require('./lyrics.cjs')({ app, ipcMain, dialog, authorize, getWindow: () => window, getTrack: id => tracks.find(track => track.id === id) || volumio.getTrack(id) });
@@ -60,7 +63,7 @@ app.whenReady().then(async () => {
     try {
       const { size } = await fs.stat(track.path);
       const mime = { '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.aac': 'audio/aac', '.opus': 'audio/ogg' }[path.extname(track.path).toLowerCase()];
-      const headers = { 'Content-Type': mime, 'Accept-Ranges': 'bytes' };
+      const headers = { 'Content-Type': mime, 'Accept-Ranges': 'bytes', 'Access-Control-Allow-Origin': 'null' };
       let start = 0, end = size - 1, status = 200;
       const range = request.headers.get('range');
       if (range) {

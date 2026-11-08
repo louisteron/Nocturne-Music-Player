@@ -190,7 +190,7 @@
     if (replacing) beginWait();
     unload(); selected = edit;
     if (edit.streamAvailable) {
-      const player = document.createElement('video'); player.volume = audio.volume; player.loop = false; player.controls = true; player.playsInline = true;
+      const player = document.createElement('video'); player.crossOrigin = 'anonymous'; player.volume = audio.volume; player.loop = false; player.controls = true; player.playsInline = true;
       player.setAttribute('aria-label', `Edit TikTok · ${current.title}`);
       player.src = `nocturne://edit-video/${edit.videoId}`;
       player.addEventListener('volumechange', () => { if (frame() !== player) return; audio.volume = player.volume; $('volume').value = player.volume; localStorage.setItem('volume', player.volume); });

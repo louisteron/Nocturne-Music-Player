@@ -1,3 +1,4 @@
+const { searchMetadata } = require('./search-metadata.cjs');
 const { sameSound } = require('./edit-discovery.cjs');
 const normalize = text => String(text || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 function mentions(text, phrase) {
@@ -15,6 +16,7 @@ function visualEdit(video) {
   return /edit|\bamv\b|\bfmv\b|\bfanvid\b/.test(text);
 }
 function rankVideos(track, videos) {
+  track = searchMetadata(track);
   const found = new Map();
   for (const video of videos) {
     if (!/^\d{16,22}$/.test(String(video.video_id)) || !visualEdit(video)) continue;

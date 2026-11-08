@@ -209,7 +209,7 @@ function selectSource(value) { source = value; localStorage.setItem('source', va
 $('source-local').onclick = () => selectSource('local');
 $('source-volumio').onclick = () => { selectSource('volumio'); if (!remote.baseUrl) openServer(); };
 async function openServer() {
-  $('server-address').value = remote.baseUrl || 'http://192.168.1.30'; $('volumio-dialog').showModal();
+  $('server-address').value = remote.baseUrl || 'http://volumio.local'; $('volumio-dialog').showModal();
   if (remote.baseUrl) await browseFolder('music-library', 'Bibliothèque', 0);
 }
 $('server-settings').onclick = openServer;

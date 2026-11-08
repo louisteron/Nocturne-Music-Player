@@ -81,7 +81,7 @@ module.exports = async function installVolumio({ app, ipcMain, authorize, getWin
           return new Response(null, { status: 416, headers: response.headers.has('content-range') ? { 'Content-Range': response.headers.get('content-range') } : {} });
         }
         if (!response.ok || (kind === 'cover' ? !/^image\/(jpeg|png|webp|gif)(;|$)/i.test(mime) : /text\/html/i.test(mime))) { await response.body?.cancel(); return new Response('Fichier indisponible sur Volumio', { status: response.status >= 400 && response.status <= 599 ? response.status : 502 }); }
-        const headers = new Headers();
+        const headers = new Headers({ 'Access-Control-Allow-Origin': 'null' });
         for (const key of ['content-type', 'content-length', 'accept-ranges', 'content-range']) if (response.headers.has(key)) headers.set(key, response.headers.get(key));
         return new Response(response.body, { status: response.status, headers });
       } catch { return new Response('Volumio est inaccessible', { status: 503 }); }

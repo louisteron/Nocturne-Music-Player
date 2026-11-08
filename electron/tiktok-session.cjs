@@ -1,3 +1,4 @@
+const { searchMetadata } = require('./search-metadata.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -64,7 +65,7 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
     return { opened: true };
   }
   function status() { return { provider: 'TikTok', free: true, configured: confirmed, requiresSession: true }; }
-  function track(id) { const item = typeof id === 'string' && getTrack(id); if (!item) throw new Error('Morceau indisponible.'); return item; }
+  function track(id) { const item = typeof id === 'string' && getTrack(id); if (!item) throw new Error('Morceau indisponible.'); return searchMetadata(item); }
   ipcMain.handle('edits:provider', event => { authorize(event); return status(); });
   ipcMain.handle('edits:session-connect', async event => { authorize(event); return connect(); });
   ipcMain.handle('edits:session-confirm', async event => { authorize(event); await save(settingsFile, { confirmed: true }); confirmed = true; if (browser && !browser.isDestroyed()) browser.hide(); return status(); });
@@ -83,7 +84,7 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
     const signal = controller.signal;
     const skip = new Set(excluded);
     const usable = video => !skip.has(video.videoId) && !(unavailable.get(video.videoId) > Date.now());
-    const key = crypto.createHash('sha256').update(JSON.stringify(['visual-metadata-v1', item.title, item.artist])).digest('hex');
+    const key = crypto.createHash('sha256').update(JSON.stringify(['visual-metadata-v2', item.title, item.artist])).digest('hex');
     if (!force && cache[key] && Date.now() - cache[key].date < (cache[key].videos?.length ? 86400000 : 300000)) {
       const videos = cache[key].videos.filter(usable);
       if (videos.length || !cache[key].videos.length) { available.set(id, videos); return { status: 'ready', videos, cached: true }; }
@@ -175,7 +176,7 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
               const response = await openMedia(url, request, headersIn);
               const type = response.headers.get('content-type') || '';
               if ((response.ok && /^(video\/|application\/octet-stream)/i.test(type)) || response.status === 416) {
-                const headers = new Headers();
+                const headers = new Headers({ 'Access-Control-Allow-Origin': 'null' });
                 for (const key of ['content-type', 'content-length', 'content-range', 'accept-ranges']) if (response.headers.has(key)) headers.set(key, response.headers.get(key));
                 if (response.ok) { edit.streamUrl = url; unavailable.delete(id); }
                 return new Response(response.body, { status: response.status, headers });
