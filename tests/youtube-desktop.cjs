@@ -1,0 +1,64 @@
+const { _electron } = require('playwright');
+const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+(async () => {
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'nocturne-youtube-'));
+  const env = { ...process.env, NOCTURNE_TEST_DATA: profile }; delete env.ELECTRON_RUN_AS_NODE;
+  const app = await _electron.launch({ args: [path.resolve(__dirname, '..')], env });
+  try {
+    const page = await app.firstWindow(); await page.locator('.brand').waitFor();
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    const wav = Buffer.alloc(44 + 8000 * 60 * 2);
+    wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(8000, 24); wav.writeUInt32LE(16000, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(wav.length - 44, 40);
+    const fixture = `<!doctype html><ytmusic-player-bar><span class="title">Heartless</span><span class="byline"><a>Kanye West</a></span><a href="/watch?v=dQw4w9WgXcQ">Titre</a></ytmusic-player-bar><button id="music-play">Lire</button><video id="music-video" controls></video><script>const v=document.querySelector('video');v.src=URL.createObjectURL(new Blob([Uint8Array.from(atob('${wav.toString('base64')}'),c=>c.charCodeAt(0))],{type:'audio/wav'}));navigator.mediaSession.metadata=new MediaMetadata({title:'Heartless',artist:'Kanye West',album:'Album'});document.querySelector('#music-play').onclick=()=>v.play();</script>`;
+    await app.evaluate(({ session, ipcMain }, html) => {
+      session.fromPartition('persist:youtube-music').protocol.handle('https', () => new Response(html, { headers: { 'Content-Type': 'text/html' } }));
+      for (const name of ['edits:discover', 'edits:align']) ipcMain.removeHandler(name);
+      ipcMain.handle('edits:discover', (_event, id) => ({ status: 'ready', videos: [{ videoId: '7696071803420134687', soundTitle: 'Heartless', soundArtist: 'Kanye West' }] }));
+      ipcMain.handle('edits:align', () => ({ matched: false, reason: 'streaming-source' }));
+    }, fixture);
+    await app.context().route('https://www.tiktok.com/player/**', route => route.fulfill({ contentType: 'text/html', body: '<script>window.ready=()=>parent.postMessage({"x-tiktok-player":true,type:"onPlayerReady"},"*");window.time=()=>parent.postMessage({"x-tiktok-player":true,type:"onCurrentTime",value:{currentTime:1,duration:20}},"*");window.end=()=>parent.postMessage({"x-tiktok-player":true,type:"onStateChange",value:0},"*");</script>' }));
+    const remote = script => app.evaluate(({ webContents }, code) => {
+      const contents = webContents.getAllWebContents().find(w => w.getURL().startsWith('https://music.youtube.com'));
+      if (!contents) throw new Error('Vue YouTube Music absente.');
+      return contents.executeJavaScript(code, true);
+    }, script);
+    await page.locator('#edits-switch').click();
+    await page.locator('#source-youtube').click();
+    await page.waitForFunction(() => !document.querySelector('#youtube-source').hidden);
+    await page.waitForFunction(() => document.querySelector('#youtube-state').textContent.includes('Heartless'));
+    assert.equal(await page.locator('#source-youtube').getAttribute('aria-pressed'), 'true');
+    const prefs = await app.evaluate(({ webContents }) => { const w = webContents.getAllWebContents().find(w => w.getURL().startsWith('https://music.youtube.com')); const p = w.getLastWebPreferences(); return { sandbox: p.sandbox, node: p.nodeIntegration, preload: p.preload }; });
+    assert.equal(prefs.sandbox, true); assert.equal(prefs.node, false); assert.equal(prefs.preload, undefined);
+    await remote("document.querySelector('#music-play').click()");
+    await page.waitForFunction(() => document.querySelector('#mini-title').textContent === 'Heartless');
+    await page.locator('#edit-player iframe').waitFor();
+    assert.equal(await remote("document.querySelector('video').paused"), true);
+    assert.equal(await page.locator('#audio').getAttribute('src'), null);
+    const edit = await (await page.locator('#edit-player iframe').elementHandle()).contentFrame();
+    await edit.waitForFunction(() => typeof window.ready === 'function'); await edit.evaluate(() => { window.ready(); window.time(); });
+    await page.waitForFunction(() => window.youtubePlayback.media().paused && Math.abs(window.youtubePlayback.media().currentTime - 20) < 1);
+    await edit.evaluate(() => window.end());
+    await page.waitForFunction(() => !usesEditAudio() && !window.youtubePlayback.media().paused);
+    assert.ok(await remote("document.querySelector('video').currentTime >= 20"));
+    assert.equal(await page.locator('#audio').evaluate(a => a.paused), true);
+    await page.locator('#play').click();
+    await page.waitForFunction(() => window.youtubePlayback.media().paused);
+    await page.locator('#seek').fill('50'); await page.locator('#seek').dispatchEvent('input');
+    await page.waitForFunction(() => window.youtubePlayback.media().currentTime >= 29.8);
+    await page.locator('#play').click(); await page.waitForFunction(() => !window.youtubePlayback.media().paused);
+    await page.locator('#edits-switch').click(); await page.waitForFunction(() => !window.youtubePlayback.media().paused && !usesEditAudio());
+    assert.equal((await page.evaluate(() => window.youtube.blockerStatus())).enabled, true);
+    assert.equal(await remote('typeof window.library'), 'undefined');
+    await page.locator('#youtube-adblock').click();
+    assert.equal((await page.evaluate(() => window.youtube.blockerStatus())).enabled, false);
+    await page.locator('#youtube-adblock').click();
+    assert.equal((await page.evaluate(() => window.youtube.blockerStatus())).enabled, true);
+    await page.locator('#source-local').click();
+    assert.equal(await page.locator('#youtube-source').isVisible(), false);
+    assert.deepEqual(errors, []);
+    console.log('OK : onglet YouTube Music isolé, détection du titre/artiste, sélection automatique d’edit, pause de YouTube pendant l’edit, reprise estimée, lecture/pause/progression et changement d’onglet. Aucun réseau réel dans ce test.');
+  } finally { await app.close(); await fs.rm(profile, { recursive: true, force: true }); }
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,0 +1,5 @@
+Chromaprint fpcalc 1.6.2 — AcoustID / Lukas Lalinsky
+Official binaries: https://github.com/acoustid/chromaprint/releases/tag/v1.6.2
+Source archive and license notices included alongside this file.
+Upstream build instructions: https://github.com/acoustid/chromaprint
+The fingerprint engine runs locally; no audio is uploaded to AcoustID.

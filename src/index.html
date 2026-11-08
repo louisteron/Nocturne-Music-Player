@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: nocturne:; media-src nocturne:; frame-src https://www.tiktok.com; connect-src 'none'">
+  <title>Nocturne</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="albums.css">
+  <link rel="stylesheet" href="lyrics.css">
+  <link rel="stylesheet" href="edits.css">
+  <link rel="stylesheet" href="youtube.css">
+</head>
+<body>
+  <div class="city" aria-hidden="true"><div class="buildings"></div><div class="sign">夜<br>の<br>音</div><div class="road"></div></div>
+  <header><a class="brand" href="#">nocturne<span>YOUR MUSIC, AFTER DARK</span></a><div class="top-right"><button id="edits-switch" class="edits-switch" role="switch" aria-checked="false" aria-label="Mode edits TikTok"><span class="switch-track" aria-hidden="true"></span><span>Edits TikTok</span></button><button id="server-settings" class="server-settings">＋ Connecter Volumio</button><span id="connection-label" class="offline">● LOCAL</span><time id="clock"></time></div></header>
+  <main>
+    <section class="library" aria-label="Bibliothèque musicale">
+      <div class="library-heading"><h1>Les albums<span id="count">0 album</span></h1><button id="add" title="Ajouter des fichiers" aria-label="Ajouter des fichiers">＋</button></div>
+      <div class="sources" aria-label="Source musicale"><button id="source-local" aria-pressed="true">Sur cet ordinateur</button><button id="source-volumio" aria-pressed="false">Volumio</button><button id="source-youtube" aria-pressed="false">YouTube Music</button><button id="sync" title="Synchroniser le dossier Volumio" aria-label="Synchroniser Volumio" hidden>↻</button></div>
+      <section id="youtube-source" class="youtube-source" aria-label="YouTube Music" hidden><form id="youtube-search-form" class="youtube-search"><input id="youtube-query" placeholder="Titre, artiste ou lien YouTube Music…" aria-label="Rechercher sur YouTube Music" required><button type="submit">Rechercher</button></form><div class="youtube-toolbar"><button id="youtube-home">Accueil</button><button id="youtube-adblock" aria-pressed="true">Bloqueur activé</button><button id="youtube-adblock-update" aria-label="Actualiser les filtres publicitaires" title="Actualiser les filtres publicitaires">↻</button><p id="youtube-state" role="status">Choisis un morceau dans le lecteur officiel.</p></div><div id="youtube-native-host" class="youtube-native-host"><p>Chargement de YouTube Music…</p></div><p class="youtube-note">Lecture via YouTube Music. Connexion, publicités et disponibilité selon le service. Active Edits TikTok pour rechercher un montage à la sélection d’un morceau.</p></section>
+      <input id="search" type="search" placeholder="Rechercher un album, un artiste, un titre…" aria-label="Rechercher dans la bibliothèque">
+      <div class="carousel-shell"><div class="center-line" aria-hidden="true"></div><div id="albums" class="albums" tabindex="0" aria-label="Albums, utiliser les flèches haut et bas"></div><div class="scroll-controls"><button id="album-up" aria-label="Album précédent">↑</button><span id="album-position">00 / 00</span><button id="album-down" aria-label="Album suivant">↓</button></div></div>
+      <div class="import-actions"><button id="folder">↳ Importer un dossier</button><span id="folder-label">DÉFILE POUR EXPLORER</span></div>
+    </section>
+    <section class="stage" aria-label="En cours de lecture">
+      <section id="edit-panel" class="edit-panel" aria-label="Edit TikTok du morceau en cours" hidden><div class="edit-heading"><div><span class="eyebrow">EDITS / TIKTOK</span><h2 id="edit-title">Choisis un morceau</h2><p id="edit-status" role="status">Un edit sera recherché automatiquement à la sélection du morceau.</p></div><button id="edit-add">⚙ Recherche automatique</button></div><div id="edit-player" class="edit-player"><div id="edit-empty"><span aria-hidden="true">▶</span><h3>Un edit pour ton morceau.</h3><p id="edit-hint">Connecte-toi une fois à TikTok, puis sélectionne un morceau.</p><button id="edit-empty-add">Configurer la recherche</button></div></div><div class="edit-footer"><span>IMAGE ET SON TIKTOK</span><div><button id="edit-browse">Titres</button><button id="edit-another" disabled>Autre edit</button><button id="edit-open" disabled>Voir sur TikTok ↗</button><button id="edit-refresh">Rechercher</button></div></div></section>
+      <div class="eyebrow">THE NIGHT IS YOURS</div>
+      <div class="disc-wrap"><div class="disc" id="disc"><div class="disc-lines"></div><span>♫</span><div class="hub"></div></div><div class="disc-shadow"></div></div>
+      <div class="detail-tabs" aria-label="Affichage"><button id="show-tracks" aria-pressed="true">Titres</button><button id="show-lyrics" aria-pressed="false">Paroles</button></div>
+      <div class="album-detail" id="album-detail"><div class="detail-heading"><div><span class="eyebrow" id="album-meta">TA COLLECTION</span><h2 id="album-title">La nuit t’appartient.</h2><p id="album-artist">Ajoute tes albums pour commencer.</p></div><button id="play-album" aria-label="Lire cet album" disabled>▶ Lire l’album</button></div><div id="tracks" class="tracks"></div></div>
+      <section id="lyrics-panel" class="lyrics-panel" aria-label="Paroles du morceau en cours" hidden><div class="lyrics-heading"><div><h2 id="lyrics-title">Paroles en direct</h2><p id="lyrics-state">Lance un morceau pour afficher ses paroles.</p></div><button id="lyrics-import" title="Importer un fichier LRC" disabled>＋ LRC</button></div><div id="lyrics-lines" class="lyrics-lines" tabindex="0" aria-label="Paroles, cliquer sur une ligne pour avancer dans le morceau"></div><div class="lyrics-tools"><button id="lyrics-earlier" aria-label="Avancer les paroles de 0,5 seconde">− 0,5 s</button><span id="lyrics-offset">Décalage : 0 s</span><button id="lyrics-later" aria-label="Retarder les paroles de 0,5 seconde">＋ 0,5 s</button><button id="lyrics-follow" hidden>Suivre la lecture</button></div><p class="lyrics-credit">Paroles : fichier LRC ou LRCLIB. La recherche en ligne utilise le titre, l’artiste, l’album et la durée.</p></section>
+      <div class="now" hidden><h2 id="title"></h2><p id="artist"></p></div>
+    </section>
+  </main>
+  <footer class="player">
+    <div class="mini"><div id="mini-cover" class="mini-cover">♫</div><div><strong id="mini-title">Aucun morceau</strong><span id="mini-artist">Ta bibliothèque locale</span></div></div>
+    <div class="transport"><div class="buttons"><button id="shuffle" aria-label="Lecture aléatoire" aria-pressed="false" title="Aléatoire">⤨</button><button id="previous" aria-label="Morceau précédent">⏮</button><button id="play" class="play" aria-label="Lire">▶</button><button id="next" aria-label="Morceau suivant">⏭</button><button id="repeat" aria-label="Répéter la bibliothèque" aria-pressed="false" title="Répéter la bibliothèque">↻</button></div><div class="timeline"><span id="elapsed">0:00</span><input id="seek" type="range" min="0" max="100" value="0" step="0.1" aria-label="Position de lecture"><span id="duration">0:00</span></div></div>
+    <label class="volume">VOL <input id="volume" type="range" min="0" max="1" step="0.01" value="0.75" aria-label="Volume"></label>
+  </footer>
+  <div id="status" role="status" aria-live="polite"></div>
+  <dialog id="volumio-dialog" aria-labelledby="volumio-heading"><div class="dialog-heading"><div><span class="eyebrow">TA MUSIQUE EN RÉSEAU</span><h2 id="volumio-heading">Connecter Volumio</h2></div><button id="close-server" aria-label="Fermer">×</button></div><form id="server-form"><label for="server-address">Adresse de ton serveur</label><div class="server-input"><input id="server-address" placeholder="http://volumio.local" required><button id="connect-server" type="submit">Se connecter</button></div></form><p id="server-message" role="status">Parcours les dossiers, puis synchronise celui de ton choix avec ses sous-dossiers.</p><nav id="breadcrumbs" aria-label="Chemin du dossier"></nav><div id="server-folders"></div><div class="dialog-footer"><span id="server-folder-count"></span><button id="import-server" disabled>Synchroniser ce dossier</button></div></dialog>
+  <audio id="audio"></audio>
+  <dialog id="edit-provider-dialog" aria-labelledby="edit-provider-heading"><div class="dialog-heading"><div><span class="eyebrow">GRATUIT · AUCUNE CLÉ API</span><h2 id="edit-provider-heading">Connexion TikTok</h2></div><button id="edit-provider-close" aria-label="Fermer">×</button></div><p class="edit-explanation">Connecte-toi directement à TikTok dans la fenêtre qui s’ouvre. Tu peux utiliser son QR code. Nocturne n’accède pas à ton mot de passe et ne lit ni n’exporte tes cookies.</p><p id="edit-provider-status" role="status"></p><div class="edit-form-actions"><button id="edit-session-connect">Se connecter à TikTok</button><button id="edit-session-confirm">Connexion terminée</button></div><div class="edit-provider-note"><p>La session est conservée sur cet ordinateur. La recherche utilise le site TikTok avec le titre et l’artiste du morceau, sans service payant. Si TikTok bloque les résultats ou demande une vérification, Nocturne le signale sans la contourner.</p><button id="edit-session-open">Ouvrir la fenêtre TikTok</button> · <button id="edit-session-disconnect" disabled>Déconnecter TikTok</button></div></dialog>
+  <script src="albums.js"></script>
+  <script src="lrc.js"></script>
+  <script src="player.js"></script>
+  <script src="lyrics.js"></script>
+  <script src="edits.js"></script>
+  <script src="youtube.js"></script>
+</body>
+</html>

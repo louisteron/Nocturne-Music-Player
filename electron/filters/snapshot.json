@@ -1,0 +1,6 @@
+{
+  "date": "2026-11-07T21:49:22.007Z",
+  "engine": "2.20.3",
+  "source": "https://github.com/ghostery/adblocker/tree/master/packages/adblocker/assets",
+  "preset": "ads-only"
+}
