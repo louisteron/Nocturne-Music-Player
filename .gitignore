@@ -2,3 +2,6 @@ node_modules/
 dist/
 artifacts/
 .DS_Store
+
+# Dossier Git imbriqué créé séparément
+/Nocturne Music Player/
