@@ -39,3 +39,15 @@ test('Métadonnées : conserver les versions et éviter un second découpage', (
   assert.equal(track.title, 'Song - Live'); assert.equal(track.artist, 'Artist');
   assert.deepEqual(searchMetadata(track), track);
 });
+test('Recherche TikTok : premier artiste, annotations retirées et crédits YouTube intégrés', () => {
+  const { tiktokSearchMetadata, searchMetadata } = require('../electron/search-metadata.cjs');
+  const track = { source:'youtube', title:'DISCO TOMORROW (Video) · Joey Valence & Brae', artist:'Uploads' };
+  assert.equal(tiktokSearchMetadata(track).title, 'DISCO TOMORROW');
+  assert.equal(tiktokSearchMetadata(track).artist, 'Joey Valence');
+  assert.equal(tiktokSearchMetadata({title:'Song (Deluxe) [Official Video]',artist:'First, Second & Third'}).artist,'First');
+  assert.equal(tiktokSearchMetadata({title:'Song (Deluxe) [Official Video]',artist:'First, Second'}).title,'Song');
+  assert.equal(tiktokSearchMetadata({title:'ARE WE STILL FRIENDS?',artist:'Tyler, The Creator, Guest'}).artist,'Tyler, The Creator');
+  assert.equal(tiktokSearchMetadata({title:'Song',artist:'Display credit',artists:[{name:'Real first artist'},{name:'Guest'}]}).artist,'Real first artist');
+  assert.equal(searchMetadata(track).title.includes('(Video)'),true,'Les métadonnées générales restent intactes');
+  assert.deepEqual(tiktokSearchMetadata(tiktokSearchMetadata(track)),tiktokSearchMetadata(track));
+});

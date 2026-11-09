@@ -7,7 +7,7 @@
     $('youtube-adblock').textContent = state.enabled ? 'Bloqueur activé' : 'Bloqueur désactivé';
     $('youtube-adblock').title = `${state.blocked} requêtes publicitaires bloquées. Cliquer pour ${state.enabled ? 'désactiver' : 'activer'}.`;
   }
-  async function command(action, value) { return window.youtube.command(action, value, ['play', 'seek'].includes(action) ? media.track?.videoId : undefined); }
+  async function command(action, value) { return window.youtube.command(action, value, ['play', 'seek', 'mix'].includes(action) ? media.track?.videoId : undefined); }
   function updateLayout() {
     const rect = $('youtube-native-host').getBoundingClientRect();
     window.youtube.layout({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }, visible && rect.height > 0 && !document.querySelector('dialog[open]') && !document.body.classList.contains('visualizer-open')).catch(report);
@@ -29,6 +29,7 @@
     detach() { attached = false; this.pause(); },
     seek(seconds) { command('seek', seconds).catch(report); },
     next(direction) { command(direction < 0 ? 'previous' : 'next').catch(report); },
+    mix(value) { return command('mix', value); },
     setVolume(value) { command('volume', value).catch(report); },
     async prepare(position, signal, id) {
       if (media.track?.id !== id) throw new Error('Le morceau YouTube Music a changé.');
@@ -54,7 +55,7 @@
       select(state.track, [state.track]);
       adopting = false;
     } else if (current?.id === state.track.id) {
-      if (usesEditAudio() && !state.paused) window.youtubePlayback.pause();
+      if (usesEditAudio() && !window.editPlayback?.isCrossfading() && !state.paused) window.youtubePlayback.pause();
       else if (!usesEditAudio()) { updatePlaybackTime(); playbackState(); }
     }
   });
@@ -78,7 +79,7 @@
   new MutationObserver(updateLayout).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['open'] });
   window.addEventListener('resize', updateLayout);
   window.addEventListener('visualizer-change', updateLayout);
-  window.addEventListener('edits-audio-change', () => window.youtube.hold(usesEditAudio()).catch(report));
-  window.youtube.hold(usesEditAudio()).catch(report);
+  window.addEventListener('edits-audio-change', () => window.youtube.hold(usesEditAudio() && !window.editPlayback?.isCrossfading()).catch(report));
+  window.youtube.hold(usesEditAudio() && !window.editPlayback?.isCrossfading()).catch(report);
   window.youtubeMusicUI.setVisible(source === 'youtube');
 })();

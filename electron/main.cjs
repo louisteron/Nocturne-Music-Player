@@ -30,7 +30,9 @@ async function walk(folder) {
   return found;
 }
 function createWindow() {
-  window = new BrowserWindow({ width: 1280, height: 820, minWidth: 850, minHeight: 600, backgroundColor: '#080f12', title: 'Nocturne', webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  window = new BrowserWindow({ width: 1280, height: 820, minWidth: 850, minHeight: 600, backgroundColor: '#080f12', title: 'Nocturne', webPreferences: { backgroundThrottling: false, preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  for (const event of ['minimize', 'hide']) window.on(event, () => window.webContents.send('window:visibility', false));
+  for (const event of ['restore', 'show']) window.on(event, () => window.webContents.send('window:visibility', true));
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.loadFile(path.join(__dirname, '../src/index.html'));
@@ -52,7 +54,7 @@ app.whenReady().then(async () => {
   const youtube = require('./youtube.cjs').installYouTube({ app, WebContentsView, ipcMain, authorize, session, getWindow: () => window });
   require('./lyrics.cjs')({ app, ipcMain, dialog, authorize, getWindow: () => window, getTrack: id => tracks.find(track => track.id === id) || volumio.getTrack(id) });
   await require('./edits.cjs').installEdits({ app, ipcMain, authorize, shell, getTrack: id => tracks.find(track => track.id === id) || volumio.getTrack(id) });
-  const tiktok = await require('./tiktok-session.cjs').installTikTokSession({ app, BrowserWindow, ipcMain, authorize, shell, session: session.defaultSession, getTrack: id => youtube.getTrack(id) || tracks.find(track => track.id === id) || volumio.getTrack(id), sourceUrl: id => volumio.audioUrl(id), getWindow: () => window });
+  const tiktok = await require('./tiktok-session.cjs').installTikTokSession({ app, BrowserWindow, ipcMain, authorize, shell, session: session.defaultSession, getTrack: id => youtube.getTrack(id) || tracks.find(track => track.id === id) || volumio.getTrack(id), sourceUrl: id => volumio.audioUrl(id), youtubeResponse: (track, signal) => youtube.audioResponse(track, signal), getWindow: () => window });
   protocol.handle('nocturne', async request => {
     const url = new URL(request.url);
     if (url.host === 'edit-video') return tiktok.serve(request, url.pathname.slice(1));

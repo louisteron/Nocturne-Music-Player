@@ -7,7 +7,7 @@ on:
       tag:
         description: Version tag to build
         required: true
-        default: v0.16.2
+        default: v0.16.7
 permissions:
   contents: read
 concurrency:
@@ -46,7 +46,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - name: Unit tests
-        run: node --test tests/library.test.cjs tests/youtube.test.cjs tests/youtube-adblock.test.cjs tests/volumio-stream.test.cjs tests/lyrics.test.cjs tests/edits.test.cjs tests/edit-discovery.test.cjs tests/edit-ranking.test.cjs tests/tiktok-session.test.cjs tests/audio-match.test.cjs
+        run: node --test tests/library.test.cjs tests/youtube.test.cjs tests/youtube-adblock.test.cjs tests/volumio-stream.test.cjs tests/lyrics.test.cjs tests/edits.test.cjs tests/edit-discovery.test.cjs tests/edit-ranking.test.cjs tests/tiktok-session.test.cjs tests/audio-match.test.cjs tests/youtube-audio.test.cjs tests/crossfade.test.cjs tests/audio-sync.test.cjs tests/playback-commands.test.cjs
       - name: Build installer
         run: npx electron-builder ${{ matrix.args }} --publish never
       - uses: actions/upload-artifact@v4

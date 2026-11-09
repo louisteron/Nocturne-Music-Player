@@ -29,7 +29,7 @@ function readPlayback() {
   if (!title || !artist || !/^[\w-]{11}$/.test(videoId || '')) return null;
   let bufferedAhead = 0;
   for (let i = 0; i < media.buffered.length; i++) if (media.buffered.start(i) <= media.currentTime + 0.05 && media.buffered.end(i) >= media.currentTime) bufferedAhead = media.buffered.end(i) - media.currentTime;
-  return { videoId, title: title.trim().slice(0, 300), artist: artist.trim().slice(0, 300), album: (metadata?.album || '').slice(0, 300), paused: media.paused, currentTime: Number.isFinite(media.currentTime) ? media.currentTime : 0, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted, readyState: media.readyState, ended: media.ended, bufferedAhead };
+  return { timestamp: Date.now(), rate: media.playbackRate, videoId, title: title.trim().slice(0, 300), artist: artist.trim().slice(0, 300), album: (metadata?.album || '').slice(0, 300), paused: media.paused, currentTime: Number.isFinite(media.currentTime) ? media.currentTime : 0, duration: Number.isFinite(media.duration) ? media.duration : 0, volume: media.volume, muted: media.muted, readyState: media.readyState, ended: media.ended, bufferedAhead };
 }
 // Lecture locale de fréquences seulement : aucun enregistrement ni envoi audio.
 function readSpectrum(active) {
@@ -62,7 +62,23 @@ async function control(action, value) {
   if (location.origin !== 'https://music.youtube.com') throw new Error('Ouvre un morceau dans YouTube Music.');
   const media = document.querySelector('video');
   if (!media) throw new Error('Choisis d’abord un morceau dans YouTube Music.');
-  if (action === 'play') await media.play();
+  if (action === 'mix') {
+    const key = Symbol.for('nocturne.audio.mix');
+    if (window[key]) cancelAnimationFrame(window[key]);
+    if (value.rate !== undefined) { media.playbackRate = value.rate; media.preservesPitch = value.rate === 1; }
+    if (value.position !== undefined) {
+      const position = value.position + (value.play ? Math.max(0, Math.min(.5, (Date.now() - value.issuedAt) / 1000)) * (value.rate || 1) : 0);
+      if (Math.abs(media.currentTime - position) > .08) media.currentTime = position;
+    }
+    // La vue YouTube est masquée pendant l’edit. Ne pas programmer ici une
+    // animation rAF : elle peut être suspendue, laissant le volume à zéro.
+    // L’enveloppe est déjà interpolée par le lecteur et envoyée à 20 Hz.
+    if (value.volume !== undefined) media.volume = value.volume;
+    if (value.play === true) { media.muted = false; await media.play(); }
+    if (value.play === false) media.pause();
+    return { currentTime: media.currentTime, paused: media.paused, timestamp: Date.now() };
+  }
+  else if (action === 'play') await media.play();
   else if (action === 'pause') media.pause();
   else if (action === 'seek') {
     if (document.querySelector('#movie_player.ad-showing, #movie_player.ad-interrupting')) throw new Error('Attends la fin de la publicité YouTube Music.');
@@ -81,7 +97,12 @@ function installYouTube({ app, WebContentsView, ipcMain, authorize, session, get
     if (!blocker) blocker = require('./youtube-adblock.cjs').createYouTubeBlocker({ app, session: session.fromPartition('persist:youtube-music'), allowUpdates: app.isPackaged || !process.env.NOCTURNE_TEST_DATA });
     return blocker;
   }
+  const commands = require('./playback-commands.cjs').createCommandQueue(() => {
+    if (view && !view.webContents.isDestroyed()) return view.webContents.executeJavaScript(`(${control.toString()})('pause')`, true);
+  });
   const tracks = new Map();
+  const recentAudio = new Map(); // URL éphémères, jamais écrites dans le profil ou les journaux.
+
   function send(channel, value) { const window = getWindow(); if (window && !window.isDestroyed()) window.webContents.send(channel, value); }
   async function poll() {
     if (polling || !view || view.webContents.isDestroyed()) return;
@@ -101,8 +122,15 @@ function installYouTube({ app, WebContentsView, ipcMain, authorize, session, get
     if (!window || window.isDestroyed()) throw new Error('La fenêtre Nocturne est fermée.');
     if (!view || view.webContents.isDestroyed()) {
       const youtubeSession = session.fromPartition('persist:youtube-music');
+      youtubeSession.webRequest.onSendHeaders({ urls: ['https://*.googlevideo.com/videoplayback*'] }, details => {
+        const url = require('./youtube-audio.cjs').audioUrl(details.url);
+        if (!url) return;
+        const key = url.searchParams.get('itag') + ':' + url.searchParams.get('lmt');
+        recentAudio.delete(key); recentAudio.set(key, url.href);
+        if (recentAudio.size > 24) recentAudio.delete(recentAudio.keys().next().value);
+      });
       youtubeSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-      view = new WebContentsView({ webPreferences: { session: youtubeSession, sandbox: true, nodeIntegration: false, contextIsolation: true } });
+      view = new WebContentsView({ webPreferences: { session: youtubeSession, backgroundThrottling: false, sandbox: true, nodeIntegration: false, contextIsolation: true } });
       view.webContents.setAudioMuted(hold);
       view.webContents.on('media-started-playing', () => { if (hold) view.webContents.setAudioMuted(true); });
       owner = window; owner.contentView.addChildView(view); view.setVisible(false);
@@ -110,7 +138,7 @@ function installYouTube({ app, WebContentsView, ipcMain, authorize, session, get
       for (const event of ['will-navigate', 'will-redirect']) view.webContents.on(event, (event, url) => { if (!allowedNavigation(url)) event.preventDefault(); });
       view.webContents.on('did-finish-load', () => { const host = new URL(view.webContents.getURL()).hostname; send('youtube:status', { text: host === 'music.youtube.com' ? 'Choisis un morceau dans YouTube Music.' : 'Termine l’étape Google affichée dans le lecteur, puis reviens à YouTube Music.' }); poll(); });
       view.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => { if (mainFrame && code !== -3) send('youtube:status', { text: 'YouTube Music ne se charge pas. Vérifie la connexion puis réessaie.' }); });
-      owner.once('closed', () => { clearInterval(timer); timer = null; if (view && !view.webContents.isDestroyed()) view.webContents.close(); view = null; owner = null; requestedUrl = null; blockerReady = null; });
+      owner.once('closed', () => { clearInterval(timer); timer = null; if (view && !view.webContents.isDestroyed()) view.webContents.close(); view = null; owner = null; requestedUrl = null; blockerReady = null; recentAudio.clear(); youtubeSession.webRequest.onSendHeaders(null); });
       timer = setInterval(poll, 600);
       blockerReady = getBlocker().initialize().catch(() => { send('youtube:status', { text: 'Les filtres publicitaires ne sont pas disponibles. Tu peux réessayer avec le bouton du bloqueur.' }); });
       const created = view;
@@ -144,15 +172,56 @@ function installYouTube({ app, WebContentsView, ipcMain, authorize, session, get
   ipcMain.handle('youtube:hold', (event, value) => { authorize(event); hold = value === true; if (view && !view.webContents.isDestroyed()) view.webContents.setAudioMuted(hold); });
   ipcMain.handle('youtube:command', async (event, action, value, videoId) => {
     authorize(event);
-    if (!['play', 'pause', 'seek', 'volume', 'next', 'previous'].includes(action)) throw new Error('Commande YouTube Music invalide.');
+    if (!['play', 'pause', 'seek', 'volume', 'next', 'previous', 'mix'].includes(action)) throw new Error('Commande YouTube Music invalide.');
     if (['seek', 'volume'].includes(action) && (!Number.isFinite(value) || value < 0 || (action === 'volume' && value > 1))) throw new Error('Valeur invalide.');
+    if (action === 'mix') {
+      if (!value || typeof value !== 'object' || Object.keys(value).some(key => !['volume', 'rate', 'position', 'play', 'issuedAt'].includes(key)) ||
+          (value.volume !== undefined && (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 1)) ||
+          (value.rate !== undefined && (!Number.isFinite(value.rate) || value.rate < .5 || value.rate > 2)) ||
+          (value.position !== undefined && (!Number.isFinite(value.position) || value.position < 0)) ||
+          (value.play !== undefined && typeof value.play !== 'boolean') ||
+          (value.play && !Number.isFinite(value.issuedAt))) throw new Error('Fondu YouTube invalide.');
+    }
     if (videoId !== undefined && !/^[\w-]{11}$/.test(videoId)) throw new Error('Morceau invalide.');
     if (!view || view.webContents.isDestroyed()) { if (action === 'pause') return; throw new Error('Ouvre YouTube Music.'); }
-    await view.webContents.executeJavaScript(`(async () => { if (${JSON.stringify(videoId || null)} && (${readPlayback.toString()})()?.videoId !== ${JSON.stringify(videoId || null)}) throw new Error('Le morceau YouTube Music a changé.'); await (${control.toString()})(${JSON.stringify(action)}, ${JSON.stringify(value ?? null)}); })()`, true);
-    if (action === 'play') view.webContents.setAudioMuted(false);
+    return commands.run(action === 'mix' && value.play === false ? 'pause' : action, async () => {
+    if (!view || view.webContents.isDestroyed()) return { cancelled: true };
+    const mixState = await view.webContents.executeJavaScript(`(async () => { if (${JSON.stringify(videoId || null)} && (${readPlayback.toString()})()?.videoId !== ${JSON.stringify(videoId || null)}) throw new Error('Le morceau YouTube Music a changé.'); return await (${control.toString()})(${JSON.stringify(action)}, ${JSON.stringify(value ?? null)}); })()`, true);
+    if (action === 'play' || (action === 'mix' && value.play)) view.webContents.setAudioMuted(false);
     else if (action === 'pause' && hold) view.webContents.setAudioMuted(true);
     await poll();
+    return mixState;
+    });
   });
-  return { getTrack: id => tracks.get(id), close: () => { clearInterval(timer); if (view && !view.webContents.isDestroyed()) view.webContents.close(); } };
+  async function audioResponse(track, signal) {
+    if (!view || view.webContents.isDestroyed()) throw new Error('Ouvre le morceau dans YouTube Music.');
+    const current = view;
+    let candidates = [];
+    for (let attempt = 0; attempt < 32; attempt++) {
+      signal?.throwIfAborted();
+      candidates = await current.webContents.executeJavaScript(`(() => {
+      const state = (${readPlayback.toString()})();
+      if (!state || state.ad || state.videoId !== ${JSON.stringify(track.videoId)}) throw new Error('Le morceau YouTube Music a changé.');
+      const formats = document.querySelector('#movie_player')?.getPlayerResponse?.()?.streamingData?.adaptiveFormats || [];
+      return [...performance.getEntriesByType('resource').map(entry => entry.name), ...${JSON.stringify([...recentAudio.values()])}].filter(name => {
+        try {
+          const url = new URL(name);
+          if (!url.hostname.endsWith('.googlevideo.com') || url.pathname !== '/videoplayback') return false;
+          return formats.some(format => format.mimeType?.startsWith('audio/') && String(format.itag) === url.searchParams.get('itag') && String(format.lastModified) === url.searchParams.get('lmt'));
+        } catch { return false; }
+      }).slice(-4).reverse();
+    })()`);
+      if (candidates.length) break;
+      await require('node:timers/promises').setTimeout(250, undefined, { signal });
+    }
+    let error = new Error('Le lecteur YouTube n’a pas encore fourni un flux audio analysable.');
+    for (const candidate of [...new Set(candidates)]) {
+      signal?.throwIfAborted();
+      try { return await require('./youtube-audio.cjs').fetchAudio(session.fromPartition('persist:youtube-music'), candidate, signal); }
+      catch (failure) { error = failure; }
+    }
+    throw error;
+  }
+  return { audioResponse, getTrack: id => tracks.get(id), close: () => { clearInterval(timer); if (view && !view.webContents.isDestroyed()) view.webContents.close(); } };
 }
 module.exports = { installYouTube, searchUrl, allowedNavigation, readPlayback, control };

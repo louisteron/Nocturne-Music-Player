@@ -1,4 +1,4 @@
-const { searchMetadata } = require('./search-metadata.cjs');
+const { tiktokSearchMetadata: searchMetadata } = require('./search-metadata.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -29,9 +29,9 @@ function publicVideo(html) {
     return { video_id: item.id, title: item.desc, is_ad: item.isAd, images: item.imagePost ? [true] : [], soundUrl: mediaUrl(item.music?.playUrl), streamUrl: streamUrls[0] || null, streamUrls, music_info: item.music ? { id: item.music.id, title: item.music.title, author: item.music.authorName, original: item.music.original } : null, author: { unique_id: item.author?.uniqueId, nickname: item.author?.nickname } };
   } catch { return null; }
 }
-async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, getTrack, session, shell, getWindow, sourceUrl, matcher: suppliedMatcher }) {
+async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, getTrack, session, shell, getWindow, sourceUrl, youtubeResponse, matcher: suppliedMatcher }) {
   let serveVideo;
-  const matcher = suppliedMatcher || createMatcher({ app, session, sourceUrl, clipResponse: (id, signal) => serveVideo(new Request(`nocturne://edit-video/${id}`, { signal }), id) });
+  const matcher = suppliedMatcher || createMatcher({ app, session, sourceUrl, youtubeResponse, decodeTail: require('./audio-decode.cjs').createTailDecoder(getWindow), clipResponse: (id, signal) => serveVideo(new Request(`nocturne://edit-video/${id}`, { signal }), id) });
   const settingsFile = path.join(app.getPath('userData'), 'tiktok-session.json');
   const cacheFile = path.join(app.getPath('userData'), 'tiktok-session-cache.json');
   let confirmed = false, cache = {}, browser = null, generation = 0, sequence = Promise.resolve(), lastSearch = 0;
@@ -84,7 +84,7 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
     const signal = controller.signal;
     const skip = new Set(excluded);
     const usable = video => !skip.has(video.videoId) && !(unavailable.get(video.videoId) > Date.now());
-    const key = crypto.createHash('sha256').update(JSON.stringify(['visual-metadata-v2', item.title, item.artist])).digest('hex');
+    const key = crypto.createHash('sha256').update(JSON.stringify(['visual-metadata-v3', item.title, item.artist])).digest('hex');
     if (!force && cache[key] && Date.now() - cache[key].date < (cache[key].videos?.length ? 86400000 : 300000)) {
       const videos = cache[key].videos.filter(usable);
       if (videos.length || !cache[key].videos.length) { available.set(id, videos); return { status: 'ready', videos, cached: true }; }
@@ -138,11 +138,10 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
   ipcMain.handle('edits:align', async (event, id, selected) => {
     authorize(event); const item = track(id), edit = available.get(id)?.find(value => value.videoId === selected);
     if (!edit) throw new Error('Edit indisponible.');
-    if (item.source === 'youtube') return { matched: false, reason: 'streaming-source' };
     if (!edit.streamUrl) return { matched: false };
     const signal = controller.signal;
     try { const result = await matcher.alignment(item, edit, signal); return signal.aborted ? { matched: false, cancelled: true } : result; }
-    catch { return { matched: false, cancelled: signal.aborted }; }
+    catch (error) { return { matched: false, cancelled: signal.aborted, reason: signal.aborted ? 'cancelled' : 'analysis-error', message: signal.aborted ? undefined : 'Analyse audio indisponible : ' + (error.code || error.message || 'décodage impossible').slice(0, 160) }; }
   });
   async function renew(edit) {
     if (!refreshing.has(edit.videoId)) refreshing.set(edit.videoId, (async () => {

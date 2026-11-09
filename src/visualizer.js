@@ -1,5 +1,6 @@
 (() => {
  const panel=$('visualizer'),output=$('visualizer-output'),button=$('show-visualizer'),mode=$('visualizer-mode');
+ let windowHidden=false;
  let worker,ready=false,opened=false,raf=0,lastAudio=0,context,tap,retryAt=0,remote=null,remoteBusy=false,remoteAt=0,remoteReceived=0,remoteActive=false,epoch=0,idle,previousId=null,playing=false,lastValue=false;
  const wave=new Float32Array(2048),frequency=new Float32Array(1024),buffers=[];
  const send=message=>worker?.postMessage(message);
@@ -37,12 +38,12 @@
  function ensure(){
   if(worker)return;
   worker=new Worker('visualizer-worker.js');worker.onerror=event=>report(event.message);
-  worker.onmessage=event=>{const m=event.data;if(m.type==='recycle'){if(buffers.length<3)buffers.push({wave:m.wave,frequency:m.frequency});}else if(m.type==='ready'){ready=true;panel.dataset.worker='ready';resize();if(!opened||document.hidden)send({type:'stop'});}else if(m.type==='state')state(m.state);else if(m.type==='changed')panel.dataset.switchWait=m.waitMs.toFixed(1);else if(m.type==='recovering')report('Le moteur graphique redémarre…');else if(m.type==='error')report(m.message);};
+  worker.onmessage=event=>{const m=event.data;if(m.type==='recycle'){if(buffers.length<3)buffers.push({wave:m.wave,frequency:m.frequency});}else if(m.type==='ready'){ready=true;panel.dataset.worker='ready';resize();if(!opened||(document.hidden||windowHidden))send({type:'stop'});}else if(m.type==='state')state(m.state);else if(m.type==='changed')panel.dataset.switchWait=m.waitMs.toFixed(1);else if(m.type==='recovering')report('Le moteur graphique redémarre…');else if(m.type==='error')report(m.message);};
   for(let i=0;i<3;i++)buffers.push({wave:new ArrayBuffer(2048*4),frequency:new ArrayBuffer(1024*4)});
   const rect=panel.getBoundingClientRect(),canvas=output.transferControlToOffscreen();worker.postMessage({type:'init',canvas,width:rect.width,height:rect.height,dpr:devicePixelRatio||1},[canvas]);
  }
  function pump(now){
-  if(!opened||document.hidden){raf=0;return;}
+  if(!opened||(document.hidden||windowHidden)){raf=0;return;}
   if(ready&&now-lastAudio>=32){
    lastAudio=now;if(previousId!==current?.id){previousId=current?.id;remote=null;send({type:'reset'});}
    const value=input(now);lastValue=Boolean(value);
@@ -63,6 +64,7 @@
  panel.addEventListener('pointermove',awake);panel.addEventListener('pointerdown',awake);panel.addEventListener('dblclick',event=>{if(event.target===output)$('visualizer-fullscreen').click();});
  document.addEventListener('keydown',event=>{if(!opened)return;if(event.key==='ArrowRight'&&event.target.tagName!=='SELECT'){event.preventDefault();send({type:'next'});awake();}if(event.key==='Escape'&&!document.fullscreenElement){event.preventDefault();toggle(false);}});
  document.addEventListener('fullscreenchange',()=>{$('visualizer-fullscreen').textContent=document.fullscreenElement?'Réduire':'Plein écran';resize();awake();});
- document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0;send({type:'stop'});}else if(opened&&!raf){send({type:'start'});raf=requestAnimationFrame(pump);}});
+ const visibility=()=>{panel.dataset.suspended=String(document.hidden||windowHidden);if((document.hidden||windowHidden)){cancelAnimationFrame(raf);raf=0;send({type:'stop'});}else if(opened&&!raf){send({type:'start'});raf=requestAnimationFrame(pump);}};
+ document.addEventListener('visibilitychange',visibility);window.appWindow?.onVisibility(visible=>{windowHidden=!visible;visibility();});
  new ResizeObserver(resize).observe(panel);window.addEventListener('pagehide',()=>worker?.terminate());button.disabled=false;
 })();

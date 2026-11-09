@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('appWindow', { onVisibility: callback => { const handler = (_event, visible) => callback(visible === true); ipcRenderer.on('window:visibility', handler); return () => ipcRenderer.removeListener('window:visibility', handler); } });
 contextBridge.exposeInMainWorld('youtube', {
   spectrum: active => ipcRenderer.invoke('youtube:spectrum', active),
   layout: (bounds, show) => ipcRenderer.invoke('youtube:layout', bounds, show),

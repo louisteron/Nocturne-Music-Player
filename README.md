@@ -1,16 +1,16 @@
 # Nocturne Music Player
 
-Application de bureau pour macOS et Windows — version **0.16.2**.
+Application de bureau pour macOS et Windows — version **0.16.7**.
 
 Le code source du **visualiseur** provient du projet [dsViz de malakachakra](https://github.com/malakachakra/dsViz), révision `889b2c5`. Son moteur, ses scènes et son analyse audio ont été adaptés pour fonctionner avec le lecteur Nocturne.
 
 ## Télécharger la dernière release publiée
 
-Les installateurs sont disponibles dans [la release v0.16.2](https://github.com/louisteron/Nocturne-Music-Player/releases/tag/v0.16.2) :
+Les installateurs sont disponibles dans [la release v0.16.7](https://github.com/louisteron/Nocturne-Music-Player/releases/tag/v0.16.7) :
 
-- Mac Apple Silicon : `Nocturne-0.16.2-arm64.dmg`
-- Mac Intel : `Nocturne-0.16.2.dmg`
-- Windows x64 : `Nocturne.Setup.0.16.2.exe`
+- Mac Apple Silicon : `Nocturne-0.16.7-arm64.dmg`
+- Mac Intel : `Nocturne-0.16.7.dmg`
+- Windows x64 : `Nocturne.Setup.0.16.7.exe`
 
 Les installateurs ne sont pas signés.
 
@@ -20,12 +20,13 @@ Les installateurs ne sont pas signés.
 - Bibliothèque Volumio avec lecture sur l’ordinateur.
 - Navigation fluide par albums et lecteur CD.
 - Visualiseur dsViz / lemondrop, intégré depuis le code source fourni (révision `889b2c5`) : 39 scènes actives (toutes les variantes Henry avec pyramide et œil sont exclues), fluides, particules et espaces 3D. Analyse réelle de la forme d’onde et du spectre, détection des basses et des impacts. Les scènes changent entre 12 et 16 secondes, avec des fondus de huit secondes. Les groupes Lumière, Vie et particules, Fluides et Ondes et signal permettent de filtrer les scènes ; le bouton « Autre animation » les change immédiatement.
-- Analyse locale du son pour les fichiers, Volumio et vidéos natives TikTok ; YouTube est analysé lorsque son lecteur autorise la capture audio. Si le signal est indisponible, un message l’indique et le visuel n’invente pas de réaction au son. La sensibilité de l’analyse est ajustée sans changer le volume de lecture. Aucun microphone, enregistrement ou transfert audio.
+- Analyse locale du son pour les fichiers, Volumio et vidéos natives TikTok ; YouTube est analysé lorsque son lecteur autorise la capture audio. Si le signal est indisponible, un message l’indique et le visuel n’invente pas de réaction au son. La sensibilité de l’analyse est ajustée sans changer le volume de lecture. Aucun microphone ni envoi audio à un service de reconnaissance. Le repérage des edits traite temporairement le flux musical sur l’ordinateur puis efface les fichiers de travail ; seules les empreintes et les mesures de niveau sont mises en cache.
 - Paroles synchronisées, récupérées auprès de LRCLIB après activation.
 - YouTube Music intégré : recherche et lecture dans l’application.
 - Bloqueur publicitaire YouTube activé par défaut, désactivable dans l’onglet YouTube Music ; filtres actualisables avec le bouton ↻.
-- Edits TikTok sélectionnés automatiquement à partir du titre et de l’artiste, avec connexion TikTok si nécessaire.
-- Lecture du son de l’edit, puis reprise du morceau d’origine. Pour les fichiers locaux et Volumio, le calage utilise Chromaprint ; sur YouTube Music, la reprise est approximative.
+- Edits TikTok sélectionnés automatiquement à partir du titre sans annotations entre parenthèses/crochets et du premier artiste crédité (nettoyage réservé à la recherche), avec connexion TikTok si nécessaire.
+- Fondu croisé automatique quand un edit reconnu se termine par un fade-out : mesure des niveaux RMS, entrée progressive du morceau original au passage synchronisé, correction du niveau et relais sans redémarrage. Le calage et le préchargement sont terminés avant la lecture de l’edit. Le morceau est démarré silencieusement avant le fondu pour stabiliser les deux horloges. Les gains YouTube s’appliquent même lorsque sa vue est masquée. La fin musicale est indépendante de la fin de la vidéo : le morceau continue pendant l’outro, dont le son est écarté. La détection ignore les coupes franches et les simples silences ; si le passage n’est pas reconnu ou si la suite ne peut pas être préparée, le relais normal est conservé.
+- Lecture du son de l’edit, puis reprise du morceau d’origine. Le calage utilise Chromaprint pour les fichiers locaux, Volumio et les flux audio YouTube accessibles au lecteur officiel. Les 10 dernières secondes musicales utiles sont comparées, avec recherche avant une éventuelle outro TikTok et affinage du tempo sur les attaques rythmiques à environ 10 ms. Le lecteur vérifie également sa position effective au démarrage du chevauchement. Les extraits sont analysés avec un repli sur 5 secondes et une correction des accélérations/ralentissements de 0,65× à 1,5×. Les passages ambigus sont refusés ; si le passage n’est pas reconnu, un autre edit est essayé ; si aucun ne convient, l’application le signale et ne démarre pas à une position arbitraire.
 
 Les connexions, bibliothèques et préférences personnelles restent dans les données locales de l’application. Elles ne sont pas incluses dans ce dépôt. La recherche TikTok transmet le titre et l’artiste ; LRCLIB utilise les métadonnées du morceau pour rechercher les paroles. Les services externes peuvent modifier leur fonctionnement.
 

@@ -42,3 +42,38 @@ test('Médias TikTok : destinations bornées, aucune redirection vers un service
   assert.equal(mediaUrl('https://user:secret@v16.tiktokcdn.com/video'), null);
   await assert.rejects(fetchMedia({ fetch: async () => new Response(null, { status: 302, headers: { location: 'https://evil.test/steal' } }) }, 'https://v16.tiktokcdn.com/video/test'), /non autorisée/);
 });
+test('Fin audio : point absolu de reprise, correction de vitesse et refus des répétitions', async () => {
+  const { alignTail } = require('../electron/audio-match.cjs');
+  let seed = 67891;
+  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; };
+  const reference = Array.from({ length: 1500 }, random);
+  const pcm = Buffer.alloc(10 * 11025 * 2);
+  const result = await alignTail(reference, { pcm, rate: 11025 }, async (_pcm, rate) => rate === 9800 ? reference.slice(500, 570) : Array.from({ length: 60 }, random));
+  assert.equal(result.matched, true);
+  assert.ok(Math.abs(result.speed - 1.125) < .001);
+  assert.ok(Math.abs(result.positionSeconds - (500 * 1365 / 11025 + 11.25)) < .001);
+  reference.splice(800, 70, ...reference.slice(500, 570));
+  const ambiguous = await alignTail(reference, { pcm, rate: 11025 }, async (_pcm, rate) => rate === 9800 ? reference.slice(500, 570) : Array.from({ length: 60 }, random));
+  assert.equal(ambiguous.matched, false);
+});
+test('Analyse interrompue : arrêt avant de lancer le processus suivant', async () => {
+  const { alignTail } = require('../electron/audio-match.cjs');
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(alignTail(new Array(100).fill(0), { pcm: Buffer.alloc(220500), rate: 11025 }, () => { throw new Error('Ne doit pas démarrer'); }, controller.signal), { name: 'AbortError' });
+});
+test('Edit filtré : tolérer la réverbération seulement si deux fenêtres retrouvent la même fin', async () => {
+  const { alignTail } = require('../electron/audio-match.cjs');
+  let seed = 514897;
+  const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return seed >>> 0; };
+  const reference = Array.from({ length: 1500 }, random);
+  const decoded = { pcm: Buffer.alloc(220500), rate: 11025 };
+  async function run(consistent) {
+    return alignTail(reference, decoded, async (pcm, rate) => {
+      if (rate !== Math.round(11025 / .8)) return Array.from({ length: 30 }, random);
+      if (pcm.length === 220500) return reference.slice(300, 343).map(value => value ^ 63);
+      return reference.slice(consistent ? 319 : 600, (consistent ? 319 : 600) + 23).map(value => value ^ 63);
+    });
+  }
+  assert.equal((await run(true)).matched, true);
+  assert.equal((await run(false)).matched, false, 'Une deuxième fenêtre incohérente doit invalider le repérage');
+});

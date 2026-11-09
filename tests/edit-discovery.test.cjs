@@ -8,7 +8,7 @@ const track = { id: 'one', title: 'Heartless', artist: 'Kanye West' };
 const video = { video_id: '7696071803420134687', title: 'A cinematic edit #edit', music_info: { id: '123', title: 'Heartless', author: 'Kanye West', original: false }, author: { unique_id: 'editor', nickname: 'Editor' } };
 test('Recherche automatique : correspondance du son et exclusion des faux résultats', () => {
   const results = candidates(track, [video, video, { ...video, video_id: '6718335390845095173', music_info: { ...video.music_info, title: 'Heartless (sped up)' } }, { ...video, music_info: { ...video.music_info, author: 'Autre artiste' } }, { ...video, music_info: { ...video.music_info, original: true } }, { ...video, title: 'Clip officiel' }, { ...video, is_ad: true }]);
-  assert.equal(results.length, 1); assert.equal(results[0].soundTitle, track.title); assert.equal(results[0].automatic, true);
+  assert.equal(results.length, 2); assert.equal(results[0].soundTitle, track.title); assert.equal(results[0].automatic, true);
   assert.equal(results[0].url, 'https://www.tiktok.com/@editor/video/7696071803420134687');
 });
 test('Service API : aucune recherche sans clé, clé opaque, cache, persistance et suppression', async () => {

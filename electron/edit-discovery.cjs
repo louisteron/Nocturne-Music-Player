@@ -1,4 +1,4 @@
-const { cleanTitle, searchMetadata } = require('./search-metadata.cjs');
+const { firstArtist, tiktokSearchMetadata: searchMetadata } = require('./search-metadata.cjs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -6,8 +6,8 @@ const normalize = text => String(text || '').normalize('NFKD').replace(/[\u0300-
 function sameSound(track, music) {
   if (!music || music.original === true) return false;
   track = searchMetadata(track);
-  const title = normalize(track.title), artist = normalize(track.artist), author = normalize(music.author);
-  return Boolean(title && artist.length >= 3 && title === normalize(cleanTitle(music.title)) && (author === artist || author.split(/\s+/).length > 1 && (` ${artist} `).includes(` ${author} `)));
+  const title = normalize(track.title), artist = normalize(track.artist), author = normalize(firstArtist(music.author));
+  return Boolean(title && artist.length >= 3 && title === normalize(searchMetadata({ title: music.title, artist: music.author }).title) && (author === artist || author.split(/\s+/).length > 1 && (` ${artist} `).includes(` ${author} `)));
 }
 function candidates(track, videos) {
   const found = new Map();
@@ -39,7 +39,7 @@ async function installDiscovery({ app, ipcMain, authorize, getTrack, safeStorage
   async function discover(id, force) {
     const item = track(id);
     if (!apiKey) return { status: 'needs-key', videos: [] };
-    const key = crypto.createHash('sha256').update(JSON.stringify([item.title, item.artist])).digest('hex');
+    const key = crypto.createHash('sha256').update(JSON.stringify(['metadata-v3',item.title, item.artist])).digest('hex');
     if (!force && cache[key] && Date.now() - cache[key].date < (cache[key].videos.length ? 86400000 : 3600000)) {
       available.set(id, cache[key].videos); return { status: 'ready', videos: cache[key].videos, cached: true };
     }

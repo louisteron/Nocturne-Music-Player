@@ -2,11 +2,101 @@
   let enabled = localStorage.getItem('edits-enabled') === 'true';
   let edits = [], selected = null, token = 0, loadingTimer;
   let ready = false, readyPromise = Promise.resolve(false), resolveReady = () => {}, intent = 0;
-  let failedEdits = new Set(), searchedAgain = false;
+  let failedEdits = new Set(), searchedAgain = false, alignmentFailed = false;
   const embedded = { paused: true, currentTime: 0, duration: NaN };
   let wantsPlayback = false;
   let continued = false, finishing = false, alignmentPromise = null;
-  let preparation = null;
+  let preparation = null, mix = null, mixFrame = 0;
+  const masterVolume = () => Math.max(0, Math.min(1, Number($('volume').value)));
+  function stopMix() {
+    clearTimeout(mixFrame); mixFrame = 0;
+    const old = mix; mix = null;
+    if (!old) return;
+    if (old.item.youtube) window.youtubePlayback.mix({ play: false, rate: 1, volume: masterVolume() }).catch(() => {});
+    else { audio.pause(); audio.playbackRate = 1; audio.preservesPitch = true; audio.volume = masterVolume(); }
+    window.dispatchEvent(new Event('edits-audio-change'));
+  }
+  function updateMix(value, gain, rate) {
+    rate = Math.max(.5, Math.min(2, rate));
+    const volume = value.item.player.muted ? 0 : Math.min(1, masterVolume() * (value.item.fade.normalization || 1) * gain);
+    if (value.item.youtube) {
+      const now = performance.now();
+      if (now - (value.lastSent || 0) < 50) return;
+      value.lastSent = now;
+      window.youtubePlayback.mix({ volume, rate }).catch(() => { if (mix === value) stopMix(); });
+    } else { audio.volume = volume; audio.playbackRate = rate; }
+  }
+  function watchMix(player) {
+    clearTimeout(mixFrame);
+    const tick = () => {
+      if (frame() !== player || player.paused || continued) return;
+      const item = preparation;
+      if (item?.ready && item.exact && item.fade && player.currentTime >= item.warmupStart && player.currentTime < player.duration - .05 && !mix && !item.mixFailed) beginMix(item, player);
+      if (item?.ready && item.exact && player.currentTime >= item.musicEnd && item.musicEnd < player.duration - .1) {
+        if (!finishMix(player)) continueOriginal(player);
+        if (continued) player.pause();
+        return;
+      }
+      if (mix?.started && !mix.completed) {
+        let rate=item.speed;
+        if(player.currentTime<item.fadeStart){
+          const media=item.youtube?window.youtubePlayback.media():audio;
+          const clock=item.youtube?media.currentTime+(media.paused?0:Math.max(0,(Date.now()-(media.timestamp||Date.now()))/1000)*(media.rate||item.speed)):media.currentTime;
+          const expected=item.position+(player.currentTime-item.anchorSeconds)*item.speed;
+          rate+=Math.max(-.25,Math.min(.25,(expected-clock)*3));
+        }
+        updateMix(mix, NocturneCrossfade.gainAt(item.fade, player.currentTime - item.audioShift), rate);
+      }
+      mixFrame = setTimeout(tick, 16);
+    };
+    mixFrame = setTimeout(tick, 16);
+  }
+  async function beginMix(item, player) {
+    const value = { item, started: false }; mix = value;
+    const positionAt = () => Math.max(0, item.position + (player.currentTime - item.anchorSeconds) * item.speed);
+    try {
+      if (item.youtube) {
+        await window.youtube.hold(false);
+        if (mix !== value || player.paused) return;
+        let state = await window.youtubePlayback.mix({ position: positionAt(), volume: 0, rate: item.speed, play: true, issuedAt: Date.now() });
+        if (!state || state.cancelled || state.paused) throw new Error('Démarrage du morceau annulé');
+        if (state && Math.abs(state.currentTime + (Date.now() - state.timestamp) / 1000 * item.speed - positionAt()) > .06 && mix === value)
+          state = await window.youtubePlayback.mix({ position: positionAt(), volume: 0, rate: item.speed, play: true, issuedAt: Date.now() });
+        if (state && Math.abs(state.currentTime + (Date.now() - state.timestamp) / 1000 * item.speed - positionAt()) > .08) throw new Error('Synchronisation non stabilisée');
+      } else {
+        audio.volume = 0; audio.muted = player.muted; audio.playbackRate = item.speed; audio.preservesPitch = false;
+        if (Math.abs(audio.currentTime - positionAt()) > .03) audio.currentTime = positionAt();
+        await audio.play();
+        if (mix === value && Math.abs(audio.currentTime - positionAt()) > .045) {
+          audio.currentTime = positionAt();
+          await waitForAudio(() => !audio.seeking && audio.readyState >= 3, item.controller.signal, 3000);
+        }
+      }
+      if (mix !== value || item.controller.signal.aborted || frame() !== player || player.paused) { if (mix === value) stopMix(); return; }
+      value.started = true;
+      status('Transition · le morceau prend progressivement le relais');
+    } catch (error) { if (mix === value) { stopMix(); item.mixFailed = true; item.mixError = error.message; status('Fondu indisponible · relais direct préparé : ' + error.message); } }
+  }
+  function finishMix(player) {
+    const value = mix;
+    if (!value?.started || value.item.player !== player || (value.item.youtube ? window.youtubePlayback.media().ended : audio.ended)) return false;
+    value.completed = true; continued = true; finishing = false; wantsPlayback = false;
+    value.item.restore = false;
+    clearTimeout(mixFrame);
+    const started = performance.now();
+    const settle = now => {
+      if (mix !== value || current?.id !== value.item.id) return;
+      const p = Math.min(1, (now - started) / 800), ease = p * p * (3 - 2 * p);
+      updateMix(value, 1, value.item.speed + (1 - value.item.speed) * ease);
+      if (p < 1) mixFrame = setTimeout(() => settle(performance.now()), 16);
+      else { if (value.item.youtube) window.youtubePlayback.mix({ rate: 1, volume: Math.min(1, masterVolume() * (value.item.fade.normalization || 1)) }).catch(() => {}); else { audio.playbackRate = 1; audio.preservesPitch = true; } }
+    };
+    mixFrame = setTimeout(() => settle(performance.now()), 16);
+    updateNow(); updatePlaybackTime(); playbackState(); window.dispatchEvent(new Event('edits-audio-change'));
+    $('edit-panel').hidden = true;
+    message('Transition terminée · le morceau continue.');
+    return true;
+  }
   function waitForAudio(test, signal, timeout = 20000) {
     return new Promise((resolve, reject) => {
       const events = ['loadedmetadata', 'loadeddata', 'canplay', 'progress', 'seeked', 'error'];
@@ -48,25 +138,36 @@
     preparation = item;
     item.positionPromise = (async () => {
       const result = await getAlignment();
+      item.speed = Number.isFinite(result.speed) ? result.speed : 1;
+      item.fade = result.fade && result.matched && player instanceof HTMLVideoElement ? result.fade : null;
+      item.anchorSeconds = Number.isFinite(result.anchorSeconds) ? result.anchorSeconds : duration;
+      item.musicEnd = Number.isFinite(result.musicEndSeconds) ? result.musicEndSeconds : duration;
+      item.audioShift = 0;
+      item.fadeStart = item.fade ? item.fade.startSeconds + item.audioShift : duration;
+      item.warmupStart = Math.max(0,item.fadeStart-.4);
+      item.alignmentReason = result.reason;
+      item.alignmentMessage = result.message;
       const signal = item.controller.signal;
       if (signal.aborted || preparation !== item || current?.id !== item.id) throw new DOMException('Préparation annulée', 'AbortError');
       if (item.youtube) {
-        item.exact = result.matched && Number.isFinite(result.offsetSeconds);
-        item.position = Math.min(window.youtubePlayback.media().duration, Math.max(0, duration + (item.exact ? result.offsetSeconds : 0)));
-        await window.youtubePlayback.prepare(item.position, signal, item.id);
+        item.exact = result.matched && (result.syncVerified !== false || result.distance <= 2.5) && (Number.isFinite(result.positionSeconds) || Number.isFinite(result.offsetSeconds));
+        item.position = Math.min(window.youtubePlayback.media().duration > 0 ? window.youtubePlayback.media().duration : Infinity, Math.max(0, (item.exact ? (result.positionSeconds ?? duration + result.offsetSeconds) : duration)));
+        item.preloadPosition = Math.max(0, item.position + ((item.fade ? item.warmupStart : item.musicEnd) - item.anchorSeconds) * item.speed);
+        await window.youtubePlayback.prepare(item.preloadPosition, signal, item.id);
         return item;
       }
       audio.preload = 'auto';
       await loadOriginal(item);
-      item.exact = result.matched && Number.isFinite(result.offsetSeconds);
-      item.position = Math.min(audio.duration, Math.max(0, duration + (item.exact ? result.offsetSeconds : 0)));
-      if (Math.abs(audio.currentTime - item.position) > 0.02) audio.currentTime = item.position;
+      item.exact = result.matched && (result.syncVerified !== false || result.distance <= 2.5) && (Number.isFinite(result.positionSeconds) || Number.isFinite(result.offsetSeconds));
+      item.position = Math.min(audio.duration, Math.max(0, (item.exact ? (result.positionSeconds ?? duration + result.offsetSeconds) : duration)));
+      item.preloadPosition = Math.max(0, item.position + ((item.fade ? item.warmupStart : item.musicEnd) - item.anchorSeconds) * item.speed);
+      if (Math.abs(audio.currentTime - item.preloadPosition) > 0.02) audio.currentTime = item.preloadPosition;
       return item;
     })();
     item.promise = item.positionPromise.then(async () => {
-      if (!item.youtube) await waitForAudio(() => bufferedAt(item.position), item.controller.signal);
+      if (!item.youtube) await waitForAudio(() => bufferedAt(item.preloadPosition), item.controller.signal);
       item.ready = true;
-      if (frame() === player && !continued && !finishing) status(item.exact ? 'Son de l’edit · suite du morceau prête' : 'Son de l’edit · suite chargée, repérage approximatif');
+      if (frame() === player && !continued && !finishing) status(item.exact ? 'Son de l’edit · suite du morceau prête' : `Son de l’edit · ${item.alignmentMessage || 'passage non reconnu, reprise approximative'}`);
       return item;
     });
     item.promise.catch(error => { item.error = error; }); // Une erreur de préchargement ne coupe pas l'edit.
@@ -81,18 +182,30 @@
     if (resume) start();
   }
   function markReady(player) {
-    if (frame() !== player) return;
-    clearTimeout(loadingTimer); ready = true; resolveReady(true);
+    if (frame() !== player || ready || player.dataset.preparing === 'true') return;
+    clearTimeout(loadingTimer);
+    if (!(player instanceof HTMLVideoElement)) { ready = true; resolveReady(true); return; }
+    player.dataset.preparing = 'true';
+    const item = prepareContinuation(player);
+    status('Calage audio et préparation de la suite avant lecture…');
+    item?.promise.then(() => {
+      if (frame() !== player || preparation !== item || item.controller.signal.aborted) return;
+      if (!item.exact) { recover(player, 'alignment'); return; }
+      player.controls = true; ready = true; resolveReady(true);
+      status(item.exact ? 'Son de l’edit · suite calée et chargée' : 'Son de l’edit · passage non reconnu');
+    }).catch(error => { if (frame() === player && !item.controller.signal.aborted) fail('La suite n’a pas pu être préparée. ' + error.message); });
   }
   function fail(text) { clearTimeout(loadingTimer); ready = false; resolveReady(false); pausePlayback(); status(`${text} La musique reste en pause.`); }
   window.editPlayback = {
+    transitionState: () => ({ ready, continued, stage: mix ? (mix.completed ? 'complete' : mix.started ? 'playing' : 'starting') : 'idle', error: preparation?.mixError, fadeStart: preparation?.fadeStart, musicEnd: preparation?.musicEnd, anchor: preparation?.anchorSeconds, position: preparation?.position, editTime: frame()?.currentTime }),
+    isCrossfading: () => Boolean(mix && !mix.completed),
     usesEditAudio: () => enabled && !continued,
     media: () => frame() instanceof HTMLVideoElement ? frame() : embedded,
     isEmbedded: () => frame() instanceof HTMLIFrameElement,
-    seek: seconds => { if (finishing) { pausePlayback(); finishing = false; } const player = frame(); if (player instanceof HTMLVideoElement) player.currentTime = seconds; else if (player) { embedded.currentTime = seconds; send('seekTo', seconds); } },
+    seek: seconds => { stopMix(); if (finishing) { pausePlayback(); finishing = false; } const player = frame(); if (player instanceof HTMLVideoElement) player.currentTime = seconds; else if (player) { embedded.currentTime = seconds; send('seekTo', seconds); } },
     setVolume: volume => { const player = frame(); if (player instanceof HTMLVideoElement) { player.volume = volume; player.muted = false; } },
     prepare: () => refresh(),
-    cancelPlay: () => { ++intent; wantsPlayback = false; finishing = false; embedded.paused = true; send('pause'); },
+    cancelPlay: () => { stopMix(); ++intent; wantsPlayback = false; finishing = false; embedded.paused = true; send('pause'); },
     async requestPlay(id) {
       const request = ++intent;
       if (!enabled || continued) return true;
@@ -121,6 +234,7 @@
     else player?.contentWindow?.postMessage({ type, value, 'x-tiktok-player': true }, 'https://www.tiktok.com');
   }
   function unload() {
+    stopMix(); audio.volume = masterVolume();
     if (preparation) {
       const item = preparation; preparation = null; item.controller.abort();
       if (item.youtube) { if (item.restore && current?.id === item.id) window.youtubePlayback.seek(item.previousTime); }
@@ -140,6 +254,7 @@
   }
   async function continueOriginal(player) {
     if (frame() !== player || !enabled || continued || finishing || !current) return;
+    if (finishMix(player)) return;
     const id = current.id, prepared = prepareContinuation(player, true);
     pausePlayback(); finishing = true;
     const request = ++playbackRequest;
@@ -148,8 +263,13 @@
     const valid = () => request === playbackRequest && current?.id === id && frame() === player && enabled;
     try {
       if (!prepared) throw new Error('La durée de l’edit est indisponible.');
-      const { exact, position } = await prepared.positionPromise;
+      const preparedItem = await prepared.positionPromise;
+      const exact = preparedItem.exact, position = Math.max(0, preparedItem.position + ((preparedItem.musicEnd ?? preparedItem.duration) - (preparedItem.anchorSeconds ?? preparedItem.duration)) * (preparedItem.speed || 1));
       if (!valid()) return;
+      if (prepared.fade) {
+        if (prepared.youtube) await window.youtubePlayback.prepare(position, prepared.controller.signal, prepared.id);
+        else if (Math.abs(audio.currentTime - position) > .03) audio.currentTime = position;
+      }
       // Le préchargement vise trois secondes ; au relais, on peut déjà lire
       // le tampon disponible sans attendre inutilement qu'il soit complet.
       if (!prepared.youtube && !bufferedAt(position, 0.15)) await waitForAudio(() => bufferedAt(position, 0.15), prepared.controller.signal);
@@ -178,28 +298,33 @@
     }
     finally { if (request === playbackRequest) { finishing = false; playbackPending = false; playbackState(); } }
   }
-  function recover(player) {
+  function recover(player, reason) {
+    if (reason === 'alignment') alignmentFailed = true;
     if (frame() !== player || !enabled || !current || continued || finishing) return;
     if (selected) failedEdits.add(selected.videoId);
     const next = edits.find(edit => !failedEdits.has(edit.videoId));
     if (next && failedEdits.size < 6) { playEdit(next, true); return; }
     if (!searchedAgain && failedEdits.size < 6) { searchedAgain = true; refresh(true, true); return; }
-    fail('Les edits trouvés sont momentanément inaccessibles. Réessaie ou désactive le mode Edits pour écouter le morceau.');
+    fail(alignmentFailed ? 'Aucun des edits trouvés n’a pu être calé sur ce morceau. Essaie un autre titre ou désactive le mode Edits.' : 'Les edits trouvés sont momentanément inaccessibles. Réessaie ou désactive le mode Edits pour écouter le morceau.');
   }
   function playEdit(edit, replacing = false) {
     if (replacing) beginWait();
     unload(); selected = edit;
     if (edit.streamAvailable) {
-      const player = document.createElement('video'); player.crossOrigin = 'anonymous'; player.volume = audio.volume; player.loop = false; player.controls = true; player.playsInline = true;
+      getAlignment();
+      const player = document.createElement('video'); player.crossOrigin = 'anonymous'; player.volume = masterVolume(); player.loop = false; player.controls = false; player.playsInline = true;
       player.setAttribute('aria-label', `Edit TikTok · ${current.title}`);
       player.src = `nocturne://edit-video/${edit.videoId}`;
       player.addEventListener('volumechange', () => { if (frame() !== player) return; audio.volume = player.volume; $('volume').value = player.volume; localStorage.setItem('volume', player.volume); });
       for (const event of ['loadedmetadata', 'timeupdate', 'seeked', 'play', 'pause', 'ended']) player.addEventListener(event, () => { if (frame() === player) { updatePlaybackTime(); playbackState(); } });
-      player.addEventListener('play', () => { if (frame() === player) wantsPlayback = true; });
-      player.addEventListener('pause', () => { if (frame() === player && !player.error) wantsPlayback = false; });
-      player.addEventListener('canplay', () => { if (frame() !== player || continued || finishing) return; markReady(player); prepareContinuation(player); status(`Son de l’edit · synchronisé avec la vidéo · ${edit.author || 'TikTok'}`); });
+      player.addEventListener('play', () => { if (frame() === player) { wantsPlayback = true; watchMix(player); } });
+      player.addEventListener('pause', () => { if (frame() === player && !player.error) { wantsPlayback = false; if (!continued && !player.ended && player.currentTime < player.duration - .05) stopMix(); } });
+      player.addEventListener('loadedmetadata', () => { if (frame() === player) prepareContinuation(player); });
+      player.addEventListener('canplay', () => { if (frame() !== player || continued || finishing) return; markReady(player); });
+      player.addEventListener('playing', () => { if (frame() === player) watchMix(player); });
+      player.addEventListener('waiting', () => { if (frame() === player) stopMix(); });
       player.addEventListener('ended', () => continueOriginal(player));
-      player.addEventListener('seeking', () => { if (frame() === player && finishing) pausePlayback(); });
+      player.addEventListener('seeking', () => { stopMix(); if (!player.paused) watchMix(player); if (frame() === player && finishing) pausePlayback(); });
       player.addEventListener('error', () => recover(player));
       $('edit-player').append(player); $('edit-open').disabled = false; $('edit-another').disabled = edits.length < 2;
       status(failedEdits.size ? `Edit indisponible · essai d’un autre (${failedEdits.size + 1}) · musique en attente…` : 'Chargement de l’edit · musique en attente…');
@@ -217,7 +342,7 @@
     loadingTimer = setTimeout(() => recover(player), 20000);
   }
   async function refresh(force = false, recovering = false) {
-    if (!recovering) { failedEdits = new Set(); searchedAgain = false; }
+    if (!recovering) { failedEdits = new Set(); searchedAgain = false; alignmentFailed = false; }
     beginWait();
     const request = ++token; unload(); edits = [];
     updateNow(); window.dispatchEvent(new Event('edits-audio-change'));

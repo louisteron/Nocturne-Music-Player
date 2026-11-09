@@ -1,4 +1,4 @@
-const { searchMetadata } = require('./search-metadata.cjs');
+const { tiktokSearchMetadata: searchMetadata } = require('./search-metadata.cjs');
 const { sameSound } = require('./edit-discovery.cjs');
 const normalize = text => String(text || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 function mentions(text, phrase) {
