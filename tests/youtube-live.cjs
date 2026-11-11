@@ -11,8 +11,7 @@ const assert = require('node:assert/strict');
     await page.locator('#volume').fill('0'); await page.locator('#volume').dispatchEvent('input');
     if (await page.locator('#edits-switch').getAttribute('aria-checked') !== 'true') await page.locator('#edits-switch').click();
     await page.locator('#source-youtube').click();
-    await page.locator('#youtube-query').fill('https://music.youtube.com/watch?v=-ed6UeDp1ek');
-    await page.locator('#youtube-search-form button').click();
+    await page.evaluate(() => window.youtube.search('https://music.youtube.com/watch?v=-ed6UeDp1ek'));
     let adSamples = 0;
     for (let i = 0; i < 90; i++) {
       const observation = await app.evaluate(async ({ webContents }) => {

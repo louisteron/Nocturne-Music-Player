@@ -19,7 +19,7 @@
     <section class="library" aria-label="Bibliothèque musicale">
       <div class="library-heading"><h1>Les albums<span id="count">0 album</span></h1><button id="add" title="Ajouter des fichiers" aria-label="Ajouter des fichiers">＋</button></div>
       <div class="sources" aria-label="Source musicale"><button id="source-local" aria-pressed="true">Sur cet ordinateur</button><button id="source-volumio" aria-pressed="false">Volumio</button><button id="source-youtube" aria-pressed="false">YouTube Music</button><button id="sync" title="Synchroniser le dossier Volumio" aria-label="Synchroniser Volumio" hidden>↻</button></div>
-      <section id="youtube-source" class="youtube-source" aria-label="YouTube Music" hidden><form id="youtube-search-form" class="youtube-search"><input id="youtube-query" placeholder="Titre, artiste ou lien YouTube Music…" aria-label="Rechercher sur YouTube Music" required><button type="submit">Rechercher</button></form><div class="youtube-toolbar"><button id="youtube-home">Accueil</button><button id="youtube-adblock" aria-pressed="true">Bloqueur activé</button><button id="youtube-adblock-update" aria-label="Actualiser les filtres publicitaires" title="Actualiser les filtres publicitaires">↻</button><p id="youtube-state" role="status">Choisis un morceau dans le lecteur officiel.</p></div><div id="youtube-native-host" class="youtube-native-host"><p>Chargement de YouTube Music…</p></div><p class="youtube-note">Lecture via YouTube Music. Connexion, publicités et disponibilité selon le service. Active Edits TikTok pour rechercher un montage à la sélection d’un morceau.</p></section>
+      <section id="youtube-source" class="youtube-source" aria-label="YouTube Music" hidden><div class="youtube-toolbar"><button id="youtube-home">Accueil</button><button id="youtube-adblock" aria-pressed="true">Bloqueur activé</button><button id="youtube-adblock-update" aria-label="Actualiser les filtres publicitaires" title="Actualiser les filtres publicitaires">↻</button><p id="youtube-state" role="status">Choisis un morceau dans le lecteur officiel.</p></div><div id="youtube-native-host" class="youtube-native-host"><p>Chargement de YouTube Music…</p></div><p class="youtube-note">Lecture via YouTube Music. Connexion, publicités et disponibilité selon le service. Active Edits TikTok pour rechercher un montage à la sélection d’un morceau.</p></section>
       <input id="search" type="search" placeholder="Rechercher un album, un artiste, un titre…" aria-label="Rechercher dans la bibliothèque">
       <div class="carousel-shell"><div class="center-line" aria-hidden="true"></div><div id="albums" class="albums" tabindex="0" aria-label="Albums, utiliser les flèches haut et bas"></div><div class="scroll-controls"><button id="album-up" aria-label="Album précédent">↑</button><span id="album-position">00 / 00</span><button id="album-down" aria-label="Album suivant">↓</button></div></div>
       <div class="import-actions"><button id="folder">↳ Importer un dossier</button><span id="folder-label">DÉFILE POUR EXPLORER</span></div>
@@ -53,6 +53,7 @@
   <script src="player.js"></script>
   <script src="lyrics.js"></script>
   <script src="crossfade.js"></script>
+  <script src="edit-candidates.js"></script>
   <script src="edits.js"></script>
   <script src="youtube.js"></script>
   <script src="vendor/dsviz/dsviz.js"></script>

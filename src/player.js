@@ -1,11 +1,11 @@
 const $ = id => document.getElementById(id);
-const audio = $('audio');
+let audio = $('audio');
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 let tracks = [], remote = { tracks: [], baseUrl: '', rootUri: 'music-library' };
 let source = localStorage.getItem('source') || 'local';
 let albums = [], focused = null, current = null, queue = [], shuffled = false, repeat = false, busy = false;
 let messageTimer, frame = 0, cardGeometry = [];
-let playbackRequest = 0, playbackPending = false;
+let playbackRequest = 0, playbackPending = false, plannedNext = null;
 const time = value => { const seconds = Number.isFinite(value) ? Math.floor(value) : 0; return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; };
 const collection = () => source === 'volumio' ? remote.tracks : tracks;
 const query = () => $('search').value.trim().toLocaleLowerCase();
@@ -66,7 +66,7 @@ function renderDetail() {
       const remove = element('button', 'remove', '×'); remove.title = 'Retirer de la bibliothèque (conserve le fichier)'; remove.setAttribute('aria-label', `Retirer ${track.title}`);
       remove.onclick = async () => {
         try {
-          tracks = await window.library.remove(track.id); queue = queue.filter(item => item.id !== track.id);
+          tracks = await window.library.remove(track.id); queue = queue.filter(item => item.id !== track.id); queueChanged();
           if (current?.id === track.id) { pausePlayback(); audio.removeAttribute('src'); audio.load(); current = null; window.editPlayback?.prepare(); updateNow(); if ('mediaSession' in navigator) navigator.mediaSession.metadata = null; }
           render();
         } catch (error) { message(error.message); }
@@ -141,7 +141,7 @@ function pausePlayback() {
 function select(track, albumQueue = queue) {
   pausePlayback();
   if (track.source !== 'youtube') window.youtubePlayback?.detach();
-  current = track; queue = albumQueue.length ? [...albumQueue] : [track];
+  current = track; plannedNext = null; queue = albumQueue.length ? [...albumQueue] : [track];
   if (track.source !== 'youtube' && source === 'youtube') selectSource(track.source === 'volumio' ? 'volumio' : 'local');
   if (usesYouTube()) { audio.removeAttribute('src'); audio.load(); }
   else audio.src = `nocturne://audio/${track.id}`;
@@ -156,12 +156,27 @@ function seekPlayback(seconds) {
   if (usesEditAudio()) window.editPlayback.seek(position); else if (usesYouTube()) window.youtubePlayback.seek(position); else audio.currentTime = position;
   updatePlaybackTime();
 }
+// Fixer aussi le tirage aléatoire : le titre préparé doit être celui qui sera lu.
+function upcomingTrack() {
+  if (!current) return null;
+  if (usesYouTube()) { const track = window.youtubePlayback?.upcoming(); return track?.id !== current.id ? track || null : null; }
+  const available = queue.length ? queue : focused?.tracks || [];
+  if (plannedNext?.from === current.id && available.some(track => track.id === plannedNext.track.id)) return plannedNext.track;
+  const index = available.findIndex(track => track.id === current.id);
+  let track;
+  if (shuffled && available.length > 1) { const others = available.filter(track => track.id !== current.id); track = others[Math.floor(Math.random() * others.length)]; }
+  else track = available[index + 1] || (repeat ? available[0] : null);
+  plannedNext = track ? { from: current.id, track } : null;
+  return track || null;
+}
+function queueChanged() { plannedNext = null; window.dispatchEvent(new Event('playback-queue-change')); }
 function next(direction = 1, automatic = false) {
   if (usesYouTube()) { window.youtubePlayback.next(direction); return; }
   const available = queue.length ? queue : focused?.tracks || [];
   if (!available.length) return;
   if (direction < 0 && playbackMedia().currentTime > 3) { seekPlayback(0); return; }
   const index = available.findIndex(track => track.id === current?.id); let target = index + direction;
+  if (direction > 0) { const prepared = upcomingTrack(); if (prepared) { select(prepared, available); return; } }
   if (shuffled && available.length > 1) { const others = available.filter(track => track.id !== current?.id); select(others[Math.floor(Math.random() * others.length)], available); return; }
   if (automatic && target >= available.length && !repeat) return;
   target = (target + available.length) % available.length; select(available[target], available);
@@ -178,8 +193,8 @@ $('folder').onclick = () => source === 'volumio' ? openServer() : importMusic(tr
 $('search').oninput = render;
 $('play-album').onclick = () => { if (focused) select(focused.tracks[0], focused.tracks); };
 $('play').onclick = toggle; $('previous').onclick = () => next(-1); $('next').onclick = () => next();
-$('shuffle').onclick = () => { shuffled = !shuffled; $('shuffle').setAttribute('aria-pressed', String(shuffled)); };
-$('repeat').onclick = () => { repeat = !repeat; $('repeat').setAttribute('aria-pressed', String(repeat)); };
+$('shuffle').onclick = () => { shuffled = !shuffled; $('shuffle').setAttribute('aria-pressed', String(shuffled)); queueChanged(); };
+$('repeat').onclick = () => { repeat = !repeat; $('repeat').setAttribute('aria-pressed', String(repeat)); queueChanged(); };
 const savedVolume = Number(localStorage.getItem('volume') ?? 0.75);
 audio.volume = Number.isFinite(savedVolume) ? Math.min(1, Math.max(0, savedVolume)) : 0.75; $('volume').value = audio.volume;
 $('volume').oninput = () => { audio.volume = Number($('volume').value); localStorage.setItem('volume', audio.volume); window.editPlayback?.setVolume(audio.volume); if (usesYouTube() && !usesEditAudio()) window.youtubePlayback.setVolume(audio.volume); };
@@ -192,10 +207,22 @@ function updatePlaybackTime() {
   $('volume').title = $('volume').disabled ? 'Utilise le volume dans le lecteur TikTok' : 'Volume';
   $('shuffle').disabled = $('repeat').disabled = usesYouTube();
 }
-audio.ontimeupdate = audio.onloadedmetadata = audio.onemptied = updatePlaybackTime;
 function playbackState() { const paused = playbackMedia().paused; const playing = !paused || playbackPending; $('play').textContent = playing ? 'Ⅱ' : '▶'; $('play').setAttribute('aria-label', playing ? 'Pause' : 'Lire'); $('play').setAttribute('aria-busy', String(playbackPending)); $('disc').classList.toggle('spinning', !paused); }
-audio.onplay = audio.onpause = playbackState; audio.onended = () => { if (!usesEditAudio()) next(1, true); };
-audio.onerror = () => { if (!usesEditAudio()) message(current?.source === 'volumio' ? 'Fichier Volumio inaccessible. Vérifie la connexion au serveur et le format audio.' : 'Fichier inaccessible ou format non pris en charge. Tu peux le retirer et le réimporter.'); };
+function bindAudio() {
+  audio.ontimeupdate = audio.onloadedmetadata = audio.onemptied = updatePlaybackTime;
+  audio.onplay = audio.onpause = playbackState;
+  audio.onended = () => { if (!usesEditAudio()) next(1, true); };
+  audio.onerror = () => { if (!usesEditAudio()) message(current?.source === 'volumio' ? 'Fichier Volumio inaccessible. Vérifie la connexion au serveur et le format audio.' : 'Fichier inaccessible ou format non pris en charge. Tu peux le retirer et le réimporter.'); };
+}
+function adoptPreparedAudio(prepared) {
+  if (!prepared || prepared === audio) return;
+  const old = audio;
+  prepared.id = 'audio'; prepared.muted = old.muted; prepared.volume = Number($('volume').value);
+  old.pause(); old.replaceWith(prepared); audio = prepared; bindAudio();
+  old.removeAttribute('src'); old.load();
+  window.dispatchEvent(new Event('audio-element-change'));
+}
+bindAudio();
 document.addEventListener('keydown', event => { if (event.code === 'Space' && !['INPUT', 'BUTTON', 'TEXTAREA'].includes(event.target.tagName) && !$('volumio-dialog').open) { event.preventDefault(); toggle(); } });
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', () => current ? start() : toggle());
@@ -252,7 +279,7 @@ async function syncFolder(uri) {
   $('server-message').textContent = 'Synchronisation des dossiers et sous-dossiers…'; message('Synchronisation de Volumio…');
   try {
     remote = await window.volumio.sync(uri);
-    if (current?.source === 'volumio') { const available = new Map(remote.tracks.map(track => [track.id, track])); queue = queue.map(track => available.get(track.id)).filter(Boolean); }
+    if (current?.source === 'volumio') { const available = new Map(remote.tracks.map(track => [track.id, track])); queue = queue.map(track => available.get(track.id)).filter(Boolean); queueChanged(); }
     selectSource('volumio'); $('volumio-dialog').close(); message(`${remote.tracks.length} morceaux synchronisés. Lecture sur cet ordinateur.`);
   } catch (error) { $('server-message').textContent = error.message; message(error.message); }
   finally { syncing = false; $('sync').disabled = $('connect-server').disabled = false; $('import-server').disabled = !remote.baseUrl; render(); }

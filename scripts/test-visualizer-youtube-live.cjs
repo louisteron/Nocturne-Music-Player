@@ -5,7 +5,7 @@ const { _electron }=require('playwright');const path=require('node:path');
  try {
   page=await app.firstWindow();page.setDefaultTimeout(20000);await page.locator('.brand').waitFor();
   edits=await page.locator('#edits-switch').getAttribute('aria-checked');if(edits==='true')await page.locator('#edits-switch').click();
-  await page.locator('#source-youtube').click();await page.locator('#youtube-query').fill('https://music.youtube.com/watch?v=-ed6UeDp1ek');await page.locator('#youtube-search-form button').click();
+  await page.locator('#source-youtube').click();await page.evaluate(()=>window.youtube.search('https://music.youtube.com/watch?v=-ed6UeDp1ek'));
   const remote=code=>app.evaluate(async({webContents},code)=>{const w=webContents.getAllWebContents().find(w=>w.getURL().startsWith('https://music.youtube.com'));if(!w)return null;w.setAudioMuted(true);return w.executeJavaScript(code,true);},code);
   for(let i=0;i<45;i++){
    const ready=await remote(`(()=>{const v=document.querySelector('video');if(!v||v.readyState<2)return false;v.volume=.75;v.play().catch(()=>{});return !v.paused;})()`);if(ready)break;await new Promise(r=>setTimeout(r,1000));

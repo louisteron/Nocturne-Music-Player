@@ -15,7 +15,8 @@ contextBridge.exposeInMainWorld('youtube', {
 });
 contextBridge.exposeInMainWorld('edits', {
   discover: (id, force, excluded = []) => ipcRenderer.invoke('edits:discover', id, Boolean(force), excluded),
-  align: (id, videoId) => ipcRenderer.invoke('edits:align', id, videoId),
+  align: (id, videoId, jobId) => ipcRenderer.invoke('edits:align', id, videoId, jobId),
+  cancelAlignment: jobId => ipcRenderer.invoke('edits:cancel-alignment', jobId),
   provider: () => ipcRenderer.invoke('edits:provider'),
   connectSession: () => ipcRenderer.invoke('edits:session-connect'),
   confirmSession: () => ipcRenderer.invoke('edits:session-confirm'),

@@ -57,12 +57,16 @@
     else { ++requestId; cancelAnimationFrame(animation); animation = 0; }
   }
   $('show-tracks').onclick = () => show(false); $('show-lyrics').onclick = () => show(true);
-  audio.addEventListener('loadstart', () => { ++requestId; data = null; if (visible) load(); });
-  audio.addEventListener('loadedmetadata', () => { if (visible) load(); });
-  audio.addEventListener('emptied', () => { ++requestId; data = null; if (visible) load(); });
+  function bindAudio() {
+    audio.addEventListener('loadstart', () => { ++requestId; data = null; if (visible) load(); });
+    audio.addEventListener('loadedmetadata', () => { if (visible) load(); });
+    audio.addEventListener('emptied', () => { ++requestId; data = null; if (visible) load(); });
+    audio.addEventListener('play', () => { if (visible && !animation) tick(); });
+    for (const event of ['timeupdate', 'seeked', 'pause']) audio.addEventListener(event, () => update(event === 'seeked'));
+  }
+  bindAudio();
+  window.addEventListener('audio-element-change', () => { bindAudio(); ++requestId; data = null; if (visible) load(); });
   window.addEventListener('edits-audio-change', () => { ++requestId; data = null; if (visible) load(); });
-  audio.addEventListener('play', () => { if (visible && !animation) tick(); });
-  for (const event of ['timeupdate', 'seeked', 'pause']) audio.addEventListener(event, () => update(event === 'seeked'));
   function adjust(amount) { offset = Math.round((offset + amount) * 10) / 10; localStorage.setItem(`lyrics-offset:${trackId}`, offset); setButtons(); update(true); }
   $('lyrics-earlier').onclick = () => adjust(-0.5); $('lyrics-later').onclick = () => adjust(0.5);
   for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown']) $('lyrics-lines').addEventListener(event, () => { if (data?.lines?.length) { follow = false; $('lyrics-follow').hidden = false; } }, { passive: true });

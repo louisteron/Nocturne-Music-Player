@@ -38,6 +38,13 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
   const available = new Map();
   const unavailable = new Map();
   const refreshing = new Map();
+  const alignments = new Map();
+  const validJob = value => typeof value === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(value);
+  function register(id, videos) {
+    const known = new Map((available.get(id) || []).map(video => [video.videoId, video]));
+    for (const video of videos) { known.delete(video.videoId); known.set(video.videoId, video); }
+    available.set(id, [...known.values()].slice(-32));
+  }
   let controller = new AbortController();
   function cancel() { ++generation; controller.abort(); controller = new AbortController(); }
   function progress(id, text) { const window = getWindow?.(); if (window && !window.isDestroyed()) window.webContents.send('edits:progress', { id, text }); }
@@ -87,7 +94,7 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
     const key = crypto.createHash('sha256').update(JSON.stringify(['visual-metadata-v3', item.title, item.artist])).digest('hex');
     if (!force && cache[key] && Date.now() - cache[key].date < (cache[key].videos?.length ? 86400000 : 300000)) {
       const videos = cache[key].videos.filter(usable);
-      if (videos.length || !cache[key].videos.length) { available.set(id, videos); return { status: 'ready', videos, cached: true }; }
+      if (videos.length || !cache[key].videos.length) { register(id, videos); return { status: 'ready', videos, cached: true }; }
     }
     while (Date.now() - lastSearch < 2000) { if (request !== generation) return { status: 'cancelled', videos: [] }; await new Promise(resolve => setTimeout(resolve, 200)); }
     const window = getBrowser(false), contents = window.webContents;
@@ -111,6 +118,7 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
     if (request !== generation) return { status: 'cancelled', videos: [] };
     if (!links.length) return { status: 'blocked', videos: [] };
     let matches = [];
+    const pool = new Map((excluded.length ? cache[key]?.videos || [] : []).map(video => [video.videoId, video]));
     progress(id, 'Recherche par titre et artiste · sélection des edits visuels…');
     // Quatre pages publiques en parallèle, sans télécharger ni analyser le son.
     for (let offset = 0; offset < Math.min(links.length, 12); offset += 4) {
@@ -121,12 +129,13 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
         const html = await response.text();
         return html.length <= 4000000 ? publicVideo(html) : null;
       }));
-      matches = rankVideos(item, batch.filter(result => result.status === 'fulfilled' && result.value).map(result => result.value)).filter(usable).map(video => ({ ...video, streamRefreshedAt: Date.now() }));
+      const ranked = rankVideos(item, batch.filter(result => result.status === 'fulfilled' && result.value).map(result => result.value)).map(video => ({ ...video, streamRefreshedAt: Date.now() }));
+      ranked.forEach(video => pool.set(video.videoId, video)); matches = ranked.filter(usable);
       if (matches.length) break;
     }
     if (request !== generation) return { status: 'cancelled', videos: [] };
-    cache[key] = { date: Date.now(), videos: matches };
-    await save(cacheFile, cache); available.set(id, matches);
+    cache[key] = { date: Date.now(), videos: [...pool.values()].slice(-24) };
+    await save(cacheFile, cache); register(id, matches);
     return { status: 'ready', videos: matches, cached: false };
   }
   ipcMain.handle('edits:discover', (event, id, force, excluded = []) => {
@@ -135,13 +144,18 @@ async function installTikTokSession({ app, BrowserWindow, ipcMain, authorize, ge
     const job = sequence.then(() => discover(id, Boolean(force), request, excluded)); sequence = job.catch(() => {}); return job;
   });
   ipcMain.handle('edits:auto-open', async (event, id, selected) => { authorize(event); track(id); const edit = available.get(id)?.find(value => value.videoId === selected); if (!edit) throw new Error('Edit indisponible.'); await shell.openExternal(edit.url); });
-  ipcMain.handle('edits:align', async (event, id, selected) => {
+  ipcMain.handle('edits:cancel-alignment', (event, jobId) => { authorize(event); if (!validJob(jobId)) throw new Error('Analyse invalide.'); alignments.get(jobId)?.abort(); });
+  ipcMain.handle('edits:align', async (event, id, selected, jobId) => {
     authorize(event); const item = track(id), edit = available.get(id)?.find(value => value.videoId === selected);
     if (!edit) throw new Error('Edit indisponible.');
     if (!edit.streamUrl) return { matched: false };
-    const signal = controller.signal;
+    if (jobId !== undefined && (!validJob(jobId) || alignments.has(jobId) || alignments.size >= 4)) throw new Error('Analyse invalide.');
+    const job = jobId === undefined ? null : new AbortController();
+    if (job) alignments.set(jobId, job);
+    const signal = job ? AbortSignal.any([controller.signal, job.signal]) : controller.signal;
     try { const result = await matcher.alignment(item, edit, signal); return signal.aborted ? { matched: false, cancelled: true } : result; }
     catch (error) { return { matched: false, cancelled: signal.aborted, reason: signal.aborted ? 'cancelled' : 'analysis-error', message: signal.aborted ? undefined : 'Analyse audio indisponible : ' + (error.code || error.message || 'décodage impossible').slice(0, 160) }; }
+    finally { if (job && alignments.get(jobId) === job) alignments.delete(jobId); }
   });
   async function renew(edit) {
     if (!refreshing.has(edit.videoId)) refreshing.set(edit.videoId, (async () => {

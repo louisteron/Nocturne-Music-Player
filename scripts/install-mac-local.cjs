@@ -10,12 +10,18 @@ const asar=require('@electron/asar'),fs=require('node:fs'),os=require('node:os')
   fs.copyFileSync(archive,path.join(temp,'previous.asar'));const app=path.join(temp,'app');asar.extractAll(archive,app);
   for(const directory of ['src','electron']){fs.rmSync(path.join(app,directory),{recursive:true,force:true});fs.cpSync(path.join(root,directory),path.join(app,directory),{recursive:true});}
   installed.version=project.version;fs.writeFileSync(path.join(app,'package.json'),JSON.stringify(installed,null,2)+'\n');
-  const next=path.join(temp,'app.asar');await asar.createPackage(app,next);
-  for(const name of ['src/visualizer.js','electron/audio-match.cjs'])if(!asar.extractFile(next,name).equals(fs.readFileSync(path.join(root,name))))throw new Error('Archive préparée incorrecte : '+name);
+  const next=path.join(temp,'app.asar'),output=await asar.createPackage(app,next);
+  // Cette version d'asar retourne le flux après end(), avant son événement finish.
+  if(output?.on)await require('node:stream/promises').finished(output);
+  const files=[];
+  function collect(directory){for(const entry of fs.readdirSync(path.join(root,directory),{withFileTypes:true})){const name=directory+'/'+entry.name;if(entry.isDirectory())collect(name);else if(entry.isFile())files.push(name);}}
+  collect('src');collect('electron');
+  function verify(archivePath){asar.uncacheAll();for(const name of files)if(!asar.extractFile(archivePath,name).equals(fs.readFileSync(path.join(root,name))))throw new Error('Archive incorrecte : '+name);}
+  verify(next);
   const hash=crypto.createHash('sha256').update(asar.getRawHeader(next).headerString).digest('hex');
   fs.copyFileSync(next,archive+'.new');fs.renameSync(archive+'.new',archive);asar.uncacheAll();replaced=true;
   for(const command of ['Set :CFBundleShortVersionString '+project.version,'Set :CFBundleVersion '+project.version,'Set :ElectronAsarIntegrity:Resources/app.asar:hash '+hash])cp.execFileSync('/usr/libexec/PlistBuddy',['-c',command,plist]);
-  for(const name of ['src/visualizer.js','src/visualizer-worker.js','src/vendor/dsviz/dsviz.js'])if(!asar.extractFile(archive,name).equals(fs.readFileSync(path.join(root,name))))throw new Error('Vérification échouée : '+name+' ('+asar.extractFile(archive,name).length+'/'+fs.statSync(path.join(root,name)).size+')');
+  verify(archive);
   console.log('Nocturne '+project.version+' installé et vérifié.');
  }catch(error){if(replaced){fs.copyFileSync(path.join(temp,'previous.asar'),archive);fs.writeFileSync(plist,originalPlist);}throw error;}
  finally{fs.rmSync(archive+'.new',{force:true});fs.rmSync(temp,{recursive:true,force:true});}

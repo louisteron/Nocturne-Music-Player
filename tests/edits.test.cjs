@@ -33,3 +33,41 @@ test('TikTok : associations persistantes par morceau, doublons, retrait et reche
     await handlers.get('edits:remove')({}, 'one', '7696071803420134687'); assert.deepEqual(handlers.get('edits:get')({}, 'one'), []);
   } finally { await fs.rm(profile, { recursive: true, force: true }); }
 });
+
+const { select: selectCandidates } = require('../src/edit-candidates.js');
+const candidate = videoId => ({ videoId, streamAvailable: true });
+test('Préchargement : rejeter les mauvais edits avant lecture, renouveler la recherche et préparer un secours', async () => {
+  const searches = [], attempted = [], accepted = [], released = [];
+  let releaseBackup;
+  const backup = new Promise(resolve => { releaseBackup = resolve; });
+  let firstReady;
+  const ready = new Promise(resolve => { firstReady = resolve; });
+  const job = selectCandidates({ signal: new AbortController().signal,
+    discover: async (force, excluded) => { searches.push({ force, excluded }); return { status: 'ready', videos: (force ? ['bad-one', 'good', 'backup'] : ['bad-one', 'bad-two']).map(candidate) }; },
+    prepare: async edit => { attempted.push(edit.videoId); if (edit.videoId.startsWith('bad')) throw new Error('Passage non reconnu'); if (edit.videoId === 'backup') await backup; return { edit }; },
+    release: value => released.push(value), onReady: value => { accepted.push(value.edit.videoId); firstReady(); }
+  });
+  await ready;
+  assert.deepEqual(accepted, ['good'], 'Le premier edit validé est disponible sans attendre son secours');
+  assert.deepEqual(searches, [{ force: false, excluded: [] }, { force: true, excluded: ['bad-one', 'bad-two'] }]);
+  releaseBackup(); const result = await job;
+  assert.deepEqual(attempted, ['bad-one', 'bad-two', 'good', 'backup']);
+  assert.deepEqual(accepted, ['good', 'backup']); assert.deepEqual(result.rejected, ['bad-one', 'bad-two']);
+  assert.equal(result.status, 'ready'); assert.deepEqual(released, []);
+});
+test('Préchargement : une ancienne analyse ne peut pas remplacer le prochain edit après annulation', async () => {
+  const controller = new AbortController(), accepted = [], released = [];
+  let finish;
+  const job = selectCandidates({ signal: controller.signal, discover: async () => ({ status: 'ready', videos: [candidate('old')] }),
+    prepare: () => new Promise(resolve => { finish = resolve; }), release: value => released.push(value.edit.videoId), onReady: value => accepted.push(value) });
+  await new Promise(setImmediate); controller.abort(); finish({ edit: candidate('old') });
+  assert.equal((await job).status, 'cancelled'); assert.deepEqual(accepted, []); assert.deepEqual(released, ['old']);
+});
+test('Préchargement : budget borné et aucun edit refusé remis en lecture par défaut', async () => {
+  const attempted = [], accepted = [];
+  const result = await selectCandidates({ signal: new AbortController().signal, maxAttempts: 4,
+    discover: async () => ({ status: 'ready', videos: ['one', 'two', 'three', 'four', 'five'].map(candidate) }),
+    prepare: async edit => { attempted.push(edit.videoId); throw new Error('Non reconnu'); }, release() {}, onReady: value => accepted.push(value) });
+  assert.deepEqual(attempted, ['one', 'two', 'three', 'four']); assert.deepEqual(accepted, []);
+  assert.equal(result.status, 'exhausted'); assert.equal(result.rejected.length, 4);
+});
